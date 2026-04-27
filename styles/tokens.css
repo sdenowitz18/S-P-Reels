@@ -1,0 +1,333 @@
+/* ─────────────────────────────────────────────────────────
+   S&P CINEMAS — Design tokens
+   "Living film journal." Cream paper, forest ink,
+   warm intimate, archival/library energy.
+   ───────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,30..100,0..1&family=GT+Sectra+Display&family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=Inter+Tight:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap');
+
+:root {
+  /* ── Paper & ink — warmer, softer, like a worn paperback ─ */
+  --paper:        #fbf2e2;          /* primary cream — soft, warm, sunlit */
+  --paper-2:      #f6e9d0;          /* shaded cream — card / nested surface */
+  --paper-3:      #efddbb;          /* deeper warm — divider / inset */
+  --paper-edge:   #e0c89e;          /* paper edge / hairline */
+
+  --ink:          #3a2418;          /* warm dark espresso (not black, not green) */
+  --ink-2:        #5a3a26;          /* secondary brown ink */
+  --ink-3:        #856a52;          /* muted warm — metadata */
+  --ink-4:        #b39a7a;          /* tertiary — quiet labels */
+
+  --bone:         #fdf7eb;          /* lightest cream highlight */
+
+  /* ── Forest now plays a SUPPORTING role — quiet accents ── */
+  --forest:       #4a6b3e;          /* softer mossy green */
+  --forest-deep:  #3a5430;
+  --forest-soft:  #8aa583;
+  --moss:         #b8c4a8;
+
+  /* ── Sun — the new warm hero accent (cozy, friendly) ──── */
+  --sun:          #e8a13a;          /* warm marigold — main accent */
+  --sun-soft:     #f3c373;          /* soft butter */
+  --sun-tint:     #fae5b8;          /* lightest sun fill */
+
+  /* ── Steven & Paula tracks — warmer, slightly more saturated ─ */
+  /* Steven — terracotta (warm clay, like a worn book spine) */
+  --s-ink:        #c25a2a;
+  --s-soft:       #db8255;
+  --s-tint:       #fad9b8;
+  --s-paper:      #fbe5c8;
+
+  /* Paula — raspberry-rose (a touch brighter, hand-drawn feel) */
+  --p-ink:        #c2425a;
+  --p-soft:       #db6b80;
+  --p-tint:       #fad0d6;
+  --p-paper:      #fbe0e3;
+
+  /* S+P — together — a warm plum that feels like both */
+  --sp-ink:       #8a3a52;
+  --sp-soft:      #b06880;
+  --sp-tint:      #f0d4d8;
+
+  /* ── Marks ───────────────────────────────────────────── */
+  --stamp-red:    #9a3a2c;          /* "WATCHED" stamp red — sparingly */
+  --highlighter:  #f1d97a;          /* faint marker on key text */
+
+  /* ── Type ────────────────────────────────────────────── */
+  --serif-display: "Fraunces", "Newsreader", Georgia, serif;
+  --serif-body:    "Newsreader", "EB Garamond", Georgia, serif;
+  --serif-italic:  "Newsreader", "EB Garamond", Georgia, serif;
+  --sans:          "Inter Tight", -apple-system, "Helvetica Neue", sans-serif;
+  --mono:          "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── Geometry ────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius:    8px;       /* a touch friendlier */
+  --radius-lg: 14px;
+
+  --rule:      1px solid var(--paper-edge);
+  --rule-ink:  1px solid var(--ink);
+  --rule-ink-thin: 0.5px solid var(--ink);
+
+  /* ── Shadows (subtle paper lift, not glossy) ─────────── */
+  --shadow-paper: 0 1px 0 rgba(110,80,40,.04), 0 2px 6px rgba(60,45,20,.06), 0 18px 30px -22px rgba(40,30,10,.18);
+  --shadow-card:  0 1px 0 rgba(110,80,40,.06), 0 1px 2px rgba(60,45,20,.06);
+
+  /* ── Grain (data-uri, very faint) ────────────────────── */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.10  0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ─────────────────────────────────────────────────────────
+   Base — every artboard inherits this
+   ───────────────────────────────────────────────────────── */
+.spc {
+  font-family: var(--serif-body);
+  color: var(--ink);
+  background: var(--paper);
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "ss02";
+}
+.spc::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: var(--grain);
+  background-size: 160px 160px;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: .55;
+  z-index: 1;
+}
+.spc > * { position: relative; z-index: 2; }
+
+/* ─────────────────────────────────────────────────────────
+   Type primitives
+   ───────────────────────────────────────────────────────── */
+.t-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.t-display {
+  font-family: var(--serif-display);
+  font-weight: 400;
+  font-variation-settings: "SOFT" 100, "opsz" 144;
+  letter-spacing: -0.018em;
+  line-height: 0.95;
+}
+.t-headline {
+  font-family: var(--serif-display);
+  font-weight: 500;
+  font-variation-settings: "SOFT" 80, "opsz" 60;
+  letter-spacing: -0.012em;
+  line-height: 1.05;
+}
+.t-title {
+  font-family: var(--serif-body);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.t-body {
+  font-family: var(--serif-body);
+  font-weight: 400;
+  line-height: 1.55;
+}
+.t-italic {
+  font-family: var(--serif-italic);
+  font-style: italic;
+  font-weight: 400;
+}
+.t-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.t-stamp {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* small caps drop-cap */
+.dropcap::first-letter {
+  font-family: var(--serif-display);
+  font-size: 4.6em;
+  float: left;
+  line-height: 0.85;
+  padding: 4px 10px 0 0;
+  color: var(--forest);
+  font-weight: 500;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Library-card / S+P tag chips
+   ───────────────────────────────────────────────────────── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+  border: 0.5px solid currentColor;
+  line-height: 1;
+}
+.tag-s   { color: var(--s-ink);  background: var(--s-tint); }
+.tag-p   { color: var(--p-ink);  background: var(--p-tint); }
+.tag-sp  { color: var(--sp-ink); background: var(--sp-tint); }
+.tag-watch { color: var(--ink-3); background: transparent; }
+.tag-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* simple ledger rules */
+.ledger-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 0.5px solid var(--paper-edge);
+}
+
+/* "stamp" effect for WATCHED */
+.stamp {
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  padding: 6px 10px 5px;
+  border-radius: 2px;
+  transform: rotate(-4deg);
+  color: var(--stamp-red);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  font-weight: 700;
+  position: relative;
+}
+.stamp::before, .stamp::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--paper);
+  mix-blend-mode: lighten;
+  opacity: .25;
+}
+
+/* placeholder poster */
+.poster-ph {
+  background:
+    repeating-linear-gradient(135deg, rgba(26,42,31,.06) 0 1px, transparent 1px 6px),
+    var(--paper-2);
+  border: 0.5px solid var(--paper-edge);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  text-align: center;
+  padding: 8px;
+}
+
+/* index card */
+.card-index {
+  background: var(--bone);
+  border: 0.5px solid var(--paper-edge);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  position: relative;
+}
+.card-index::before {
+  /* faint horizontal rule lines, like an index card */
+  content: "";
+  position: absolute;
+  left: 18px; right: 18px; top: 44px; bottom: 14px;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 21px, rgba(26,42,31,.08) 21px 22px);
+  pointer-events: none;
+}
+
+/* hairline link */
+.link-rule {
+  color: var(--ink);
+  text-decoration: none;
+  background: linear-gradient(currentColor, currentColor) 0 100% / 100% 0.5px no-repeat;
+  padding-bottom: 2px;
+  transition: background-size 0.2s;
+}
+.link-rule:hover { background-size: 100% 1.5px; }
+
+/* button — quiet, ink, square, archival */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.btn:hover { background: var(--forest); border-color: var(--forest); }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.btn-ghost:hover { background: var(--ink); color: var(--paper); }
+.btn-soft {
+  background: transparent;
+  color: var(--ink);
+  border: 0.5px solid var(--ink-3);
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+.btn-soft:hover { border-color: var(--ink); }
+
+/* divider */
+.div-rule { border: 0; border-top: 0.5px solid var(--paper-edge); margin: 24px 0; }
+.div-rule-ink { border: 0; border-top: 1px solid var(--ink); margin: 24px 0; }
+
+/* tab/pill nav */
+.nav-rule {
+  display: flex; gap: 28px;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 14px;
+}
+.nav-rule a {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+  text-decoration: none;
+  position: relative;
+  padding-bottom: 14px;
+  margin-bottom: -15px;
+}
+.nav-rule a.active {
+  color: var(--ink);
+  border-bottom: 2px solid var(--forest);
+}
+
+/* "marker" highlight */
+.hl {
+  background: linear-gradient(transparent 60%, var(--highlighter) 60% 88%, transparent 88%);
+  padding: 0 1px;
+}
