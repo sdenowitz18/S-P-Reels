@@ -5,15 +5,16 @@ import { AppShell } from '@/components/app-shell'
 import { TMDBSearchResult, posterUrl } from '@/lib/types'
 import Image from 'next/image'
 
-function StageCard({ tag, title, sub, tint, ink, onClick }: {
+function StageCard({ tag, title, sub, tint, ink, onClick, wide }: {
   tag: string; title: string; sub: string
-  tint: string; ink: string; onClick: () => void
+  tint: string; ink: string; onClick: () => void; wide?: boolean
 }) {
   return (
     <button onClick={onClick} style={{
       textAlign: 'left', cursor: 'pointer', padding: '24px 26px',
       background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)',
       borderRadius: 12, transition: 'all 180ms',
+      gridColumn: wide ? '1 / -1' : undefined,
     }}
     onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = tint; (e.currentTarget as HTMLButtonElement).style.borderColor = ink }}
     onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-2)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--paper-edge)' }}
@@ -35,13 +36,15 @@ export default function StagePage({ params }: { params: Promise<{ slug: string }
     try { setFilm(JSON.parse(sessionStorage.getItem('sp_film') || '{}')) } catch {}
   }, [params])
 
-  const choose = (status: 'finished' | 'now-playing') => {
-    sessionStorage.setItem('sp_status', status)
-    if (status === 'now-playing') {
-      // skip straight to saving as now playing
+  const choose = (flow: 'now-playing' | 'rate' | 'reflect') => {
+    if (flow === 'now-playing') {
+      sessionStorage.setItem('sp_status', 'now-playing')
+      sessionStorage.removeItem('sp_flow')
       router.push(`/add/${slug}/done`)
     } else {
-      router.push(`/add/${slug}/rate`)
+      sessionStorage.setItem('sp_status', 'finished')
+      sessionStorage.setItem('sp_flow', flow)
+      router.push(`/add/${slug}/${flow === 'reflect' ? 'interview' : 'rate'}`)
     }
   }
 
@@ -57,7 +60,7 @@ export default function StagePage({ params }: { params: Promise<{ slug: string }
       </div>
 
       <div style={{ padding: '56px 64px', maxWidth: 880, margin: '0 auto' }}>
-        <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ STEP 2 · WHERE ARE WE?</div>
+        <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ STEP 2 · WHERE ARE YOU WITH IT?</div>
 
         {film && (
           <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 22 }}>
@@ -85,11 +88,19 @@ export default function StagePage({ params }: { params: Promise<{ slug: string }
             onClick={() => choose('now-playing')}
           />
           <StageCard
-            tag="● FINISHED"
-            title="i finished watching it"
-            sub="we'll log it and walk you through a short reflection."
+            tag="● FINISHED — QUICK LOG"
+            title="just rate it"
+            sub="drop your stars and a note. done in thirty seconds."
+            tint="var(--s-tint)" ink="var(--s-ink)"
+            onClick={() => choose('rate')}
+          />
+          <StageCard
+            tag="✦ FINISHED — FULL REFLECTION"
+            title="rate & reflect"
+            sub="a short interview, then your rating. we'll capture what actually made it stick — or what didn't."
             tint="var(--sun-tint)" ink="var(--sun)"
-            onClick={() => choose('finished')}
+            onClick={() => choose('reflect')}
+            wide
           />
         </div>
       </div>

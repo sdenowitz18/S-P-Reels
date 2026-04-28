@@ -91,3 +91,85 @@ function fallbackQuestion(persona: InterviewerPersona): string {
   }
   return fallbacks[persona]
 }
+
+export async function generateRatingSuggestion(
+  film: Film,
+  transcript: TranscriptEntry[]
+): Promise<{ stars: number; reasoning: string } | null> {
+  if (!transcript.length) return null
+  const conversationText = transcript
+    .map(e => `${e.role === 'interviewer' ? 'interviewer' : 'viewer'}: ${e.text}`)
+    .join('\n')
+
+  try {
+    const res = await getOpenAI().chat.completions.create({
+      model: MODELS.fast,
+      max_tokens: 120,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a perceptive film critic reading a conversation between an interviewer and someone who just watched a film. Based ONLY on what the viewer said — their enthusiasm, complaints, nuance — estimate what star rating (out of 5, half-stars allowed) they'd give it.
+
+${filmContext(film)}
+
+Conversation:
+${conversationText}
+
+Respond with ONLY valid JSON: {"stars": 3.5, "reasoning": "one short sentence explaining your read"}
+No markdown. No extra keys.`,
+        },
+      ],
+    })
+    const raw = res.choices[0].message.content?.trim() ?? ''
+    const parsed = JSON.parse(raw)
+    if (typeof parsed.stars !== 'number' || typeof parsed.reasoning !== 'string') return null
+    parsed.stars = Math.round(parsed.stars * 2) / 2 // clamp to half-star increments
+    parsed.stars = Math.max(0.5, Math.min(5, parsed.stars))
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export async function generateSentimentTags(
+  film: Film,
+  transcript: TranscriptEntry[],
+  keywords: string[]
+): Promise<{ liked: string[]; disliked: string[] }> {
+  const conversationText = transcript
+    .map(e => `${e.role === 'interviewer' ? 'interviewer' : 'viewer'}: ${e.text}`)
+    .join('\n')
+
+  const keywordList = keywords.slice(0, 20).join(', ')
+
+  try {
+    const res = await getOpenAI().chat.completions.create({
+      model: MODELS.fast,
+      max_tokens: 200,
+      messages: [
+        {
+          role: 'system',
+          content: `You are reading a conversation about a film. Based on what the viewer said, classify these film keywords/themes into what they seemed to respond positively to vs negatively to. Only include a keyword if there's clear signal from the conversation — don't guess. Max 5 per list.
+
+${filmContext(film)}
+
+Keywords to classify: ${keywordList}
+
+Conversation:
+${conversationText}
+
+Respond with ONLY valid JSON: {"liked": ["tag1", "tag2"], "disliked": ["tag3"]}
+Use the exact keyword strings from the input list. No markdown. No extra keys.`,
+        },
+      ],
+    })
+    const raw = res.choices[0].message.content?.trim() ?? ''
+    const parsed = JSON.parse(raw)
+    return {
+      liked: Array.isArray(parsed.liked) ? parsed.liked.slice(0, 5) : [],
+      disliked: Array.isArray(parsed.disliked) ? parsed.disliked.slice(0, 5) : [],
+    }
+  } catch {
+    return { liked: [], disliked: [] }
+  }
+}

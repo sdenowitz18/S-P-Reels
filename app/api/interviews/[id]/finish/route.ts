@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCacheFilm } from '@/lib/tmdb'
 import { generateReflection } from '@/lib/prompts/reflection'
+import { generateRatingSuggestion, generateSentimentTags } from '@/lib/prompts/interview'
 import { TranscriptEntry } from '@/lib/types'
 
 export async function POST(
@@ -13,8 +14,7 @@ export async function POST(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const body = await request.json()
-  const { myStars, myLine } = body
+  const body = await request.json().catch(() => ({}))
 
   const { data: interview, error: fetchErr } = await supabase
     .from('interviews')
@@ -26,7 +26,12 @@ export async function POST(
   if (fetchErr || !interview) return NextResponse.json({ error: 'interview not found' }, { status: 404 })
 
   if (interview.reflection) {
-    return NextResponse.json({ interview, ...interview.reflection })
+    return NextResponse.json({
+      interview,
+      ...interview.reflection,
+      aiRating: (interview as any).ai_rating ?? null,
+      sentimentTags: (interview as any).sentiment_tags ?? null,
+    })
   }
 
   const film = await getOrCacheFilm(supabase, interview.film_id)
@@ -51,13 +56,22 @@ export async function POST(
   const existingTags = (tags ?? []).map((t: any) => t.tag)
   const recentTitles = (recentWatched ?? []).map((e: any) => e.film?.title).filter(Boolean)
 
-  const reflection = await generateReflection(film, userAnswers, existingTags, recentTitles)
+  const filmKeywords = film.keywords ?? []
 
-  // persist reflection and update taste tags
+  // run all AI calls in parallel
+  const [reflection, aiRating, sentimentTags] = await Promise.all([
+    generateReflection(film, userAnswers, existingTags, recentTitles),
+    generateRatingSuggestion(film, interview.transcript as TranscriptEntry[]),
+    generateSentimentTags(film, interview.transcript as TranscriptEntry[], filmKeywords),
+  ])
+
+  // persist reflection, ai_rating, sentiment_tags and update taste tags
   await supabase.from('interviews').update({
     transcript: interview.transcript,
     taste_tags: reflection.taste_tags,
     reflection,
+    ai_rating: aiRating,
+    sentiment_tags: sentimentTags,
   }).eq('id', id)
 
   for (const tag of reflection.taste_tags) {
@@ -68,15 +82,10 @@ export async function POST(
     await supabase.rpc('increment_taste_tag', { p_user_id: user.id, p_tag: tag })
   }
 
-  // update library entry with rating/line if provided
-  if (myStars !== undefined || myLine !== undefined) {
-    await supabase
-      .from('library_entries')
-      .update({ my_stars: myStars, my_line: myLine })
-      .eq('user_id', user.id)
-      .eq('film_id', interview.film_id)
-      .eq('list', 'watched')
-  }
-
-  return NextResponse.json({ interview: { ...interview, reflection }, ...reflection })
+  return NextResponse.json({
+    interview: { ...interview, reflection, ai_rating: aiRating, sentiment_tags: sentimentTags },
+    ...reflection,
+    aiRating,
+    sentimentTags,
+  })
 }
