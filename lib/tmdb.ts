@@ -1,4 +1,5 @@
 import { Film, FilmKind, CastMember } from './types'
+import { generateFilmBrief } from './prompts/film-brief'
 
 const BASE = 'https://api.themoviedb.org/3'
 const KEY = process.env.TMDB_API_KEY!
@@ -45,6 +46,8 @@ export async function fetchFilm(kind: FilmKind, tmdbId: number): Promise<Film> {
     ? (data.keywords?.keywords ?? []).slice(0, 20).map((k: any) => k.name)
     : (data.keywords?.results ?? []).slice(0, 20).map((k: any) => k.name)
 
+  const tmdb_genres: string[] = (data.genres ?? []).map((g: any) => g.name as string)
+
   return {
     id: `${kind}-${tmdbId}`,
     kind,
@@ -58,6 +61,7 @@ export async function fetchFilm(kind: FilmKind, tmdbId: number): Promise<Film> {
     runtime_minutes: data.runtime ?? data.episode_run_time?.[0] ?? null,
     cast_json: cast,
     keywords,
+    tmdb_genres,
     fetched_at: new Date().toISOString(),
   }
 }
@@ -71,13 +75,27 @@ export async function getOrCacheFilm(supabase: any, filmId: string): Promise<Fil
 
   if (cached) {
     const weekOld = Date.now() - 7 * 24 * 60 * 60 * 1000
-    if (new Date(cached.fetched_at).getTime() > weekOld) return cached
+    if (new Date(cached.fetched_at).getTime() > weekOld) {
+      // fire brief generation in background if not yet done
+      if (!cached.ai_brief) {
+        generateFilmBrief(cached).then(brief => {
+          if (brief) supabase.from('films').update({ ai_brief: brief, brief_at: new Date().toISOString() }).eq('id', filmId)
+        }).catch(() => {})
+      }
+      return cached
+    }
   }
 
   const [kind, id] = filmId.split('-') as [FilmKind, string]
   const film = await fetchFilm(kind, parseInt(id))
 
   await supabase.from('films').upsert(film)
+
+  // fire brief generation in background — don't await
+  generateFilmBrief(film).then(brief => {
+    if (brief) supabase.from('films').update({ ai_brief: brief, brief_at: new Date().toISOString() }).eq('id', filmId)
+  }).catch(() => {})
+
   return film
 }
 

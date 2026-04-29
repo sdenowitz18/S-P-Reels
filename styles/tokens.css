@@ -38,16 +38,16 @@
   --s-tint:       #fad9b8;
   --s-paper:      #fbe5c8;
 
-  /* Paula — raspberry-rose (a touch brighter, hand-drawn feel) */
-  --p-ink:        #c2425a;
-  --p-soft:       #db6b80;
-  --p-tint:       #fad0d6;
-  --p-paper:      #fbe0e3;
+  /* Paula — slate teal (cool contrast to Steven's warm terracotta) */
+  --p-ink:        #2f6b82;
+  --p-soft:       #4d91a8;
+  --p-tint:       #cce4ed;
+  --p-paper:      #dceef5;
 
-  /* S+P — together — a warm plum that feels like both */
-  --sp-ink:       #8a3a52;
-  --sp-soft:      #b06880;
-  --sp-tint:      #f0d4d8;
+  /* S+P — together — a warm-cool slate that feels like both */
+  --sp-ink:       #4a5870;
+  --sp-soft:      #6d7e96;
+  --sp-tint:      #d8dfe8;
 
   /* ── Marks ───────────────────────────────────────────── */
   --stamp-red:    #9a3a2c;          /* "WATCHED" stamp red — sparingly */

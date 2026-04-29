@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Wordmark } from './wordmark'
 import { NavPills } from './nav-pills'
 
@@ -44,9 +44,57 @@ function TopBar({ active, counts }: { active?: string; counts?: Record<string, n
       <Wordmark />
       <NavPills active={active} counts={counts} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 100, justifyContent: 'flex-end' }}>
+        <TastePill />
         <AccountPill />
       </div>
     </header>
+  )
+}
+
+function TastePill() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const isActive = pathname === '/profile'
+
+  return (
+    <button
+      onClick={() => router.push('/profile')}
+      title="Your taste profile"
+      aria-label="Taste profile"
+      style={{
+        width: 34, height: 34, borderRadius: '50%',
+        background: isActive ? 'var(--s-tint)' : 'transparent',
+        border: `0.5px solid ${isActive ? 'var(--s-ink)' : 'var(--paper-edge)'}`,
+        cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: isActive ? 'var(--s-ink)' : 'var(--ink-3)',
+        transition: 'all 150ms',
+        flexShrink: 0,
+      }}
+      onMouseEnter={e => {
+        if (!isActive) {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--s-ink)'
+          ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--s-ink)'
+          ;(e.currentTarget as HTMLButtonElement).style.background = 'var(--s-tint)'
+        }
+      }}
+      onMouseLeave={e => {
+        if (!isActive) {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--paper-edge)'
+          ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-3)'
+          ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+        }
+      }}
+    >
+      {/* Mini radar hexagon */}
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+        <polygon points="7.5,1 13.5,4.25 13.5,10.75 7.5,14 1.5,10.75 1.5,4.25"
+          stroke="currentColor" strokeWidth="0.9" fill="none" />
+        <polygon points="7.5,4 10.5,5.75 10.5,9.25 7.5,11 4.5,9.25 4.5,5.75"
+          stroke="currentColor" strokeWidth="0.9"
+          fill="currentColor" fillOpacity={isActive ? '0.35' : '0.15'} />
+      </svg>
+    </button>
   )
 }
 

@@ -3,6 +3,8 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
+import { BlendRadar } from '@/components/blend-radar'
+import { TasteDimensions } from '@/lib/prompts/taste-profile'
 
 interface Film { id: string; title: string; year: number; poster_path: string | null; director: string | null }
 interface Entry { my_stars?: number | null; my_line?: string | null; moods?: string[] | null }
@@ -16,6 +18,29 @@ interface Rec {
 }
 
 type Tab = 'thread' | 'watched' | 'watching' | 'want'
+
+const PROSE_BITS: Record<keyof TasteDimensions, { pos: string; neg: string }> = {
+  pace:         { pos: 'slow-burn, atmospheric storytelling', neg: 'kinetic, propulsive cinema' },
+  story_engine: { pos: 'tightly-plotted narratives',         neg: 'character study and interiority' },
+  tone:         { pos: 'dark, weighty films',                neg: 'lighter, comedic fare' },
+  warmth:       { pos: 'emotional warmth and tenderness',    neg: 'cool, detached observation' },
+  complexity:   { pos: 'demanding, layered films',           neg: 'accessible, crowd-pleasing stories' },
+  style:        { pos: 'expressive, visually distinct work', neg: 'restrained, economical filmmaking' },
+}
+
+function shortProse(name: string, dims: TasteDimensions): string {
+  const firstName = name.split(' ')[0]
+  const sorted = (Object.entries(dims) as [keyof TasteDimensions, number][])
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .filter(([, v]) => Math.abs(v) > 0.15)
+  if (sorted.length === 0) return `${firstName} has wide-ranging, eclectic taste.`
+  const [k1, v1] = sorted[0]
+  const desc1 = v1 >= 0 ? PROSE_BITS[k1].pos : PROSE_BITS[k1].neg
+  if (sorted.length < 2) return `${firstName} gravitates toward ${desc1}.`
+  const [k2, v2] = sorted[1]
+  const desc2 = v2 >= 0 ? PROSE_BITS[k2].pos : PROSE_BITS[k2].neg
+  return `${firstName} gravitates toward ${desc1}, with a pull toward ${desc2}.`
+}
 
 function Stars({ val }: { val?: number | null }) {
   if (!val) return <span style={{ color: 'var(--ink-4)', fontSize: 11, fontStyle: 'italic', fontFamily: 'var(--serif-italic)' }}>no rating</span>
@@ -62,7 +87,6 @@ function RecCard({ rec, onComment, onReact }: {
 
   return (
     <div style={{ padding: '20px 22px', background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 14 }}>
-      {/* Header */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
         <Poster path={rec.film?.poster_path} title={rec.film?.title} size={56} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -80,7 +104,6 @@ function RecCard({ rec, onComment, onReact }: {
         </div>
       </div>
 
-      {/* Reaction buttons — only show if received */}
       {!rec.isFromMe && (
         <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[
@@ -103,7 +126,6 @@ function RecCard({ rec, onComment, onReact }: {
         </div>
       )}
 
-      {/* Comments */}
       <div style={{ marginTop: 14, borderTop: '0.5px solid var(--paper-edge)', paddingTop: 12 }}>
         {rec.comments.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
@@ -284,6 +306,8 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
   const [loadingBlend, setLoadingBlend] = useState(true)
   const [loadingThread, setLoadingThread] = useState(true)
   const [showRecommend, setShowRecommend] = useState(false)
+  const [myDimensions, setMyDimensions] = useState<TasteDimensions | null>(null)
+  const [theirDimensions, setTheirDimensions] = useState<TasteDimensions | null>(null)
 
   const loadBlend = async (id: string) => {
     const res = await fetch(`/api/friends/${id}/crossovers`)
@@ -308,10 +332,17 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
   }
 
   useEffect(() => {
-    params.then(({ id }) => {
+    params.then(async ({ id }) => {
       setFriendId(id)
       loadBlend(id)
       loadThread(id)
+      const [myTaste, theirTaste] = await Promise.all([
+        fetch('/api/profile/taste').then(r => r.json()),
+        fetch(`/api/friends/${id}/taste`).then(r => r.json()),
+      ])
+      if (myTaste?.dimensions) setMyDimensions(myTaste.dimensions)
+      if (myTaste?.myName) setMyName(n => n || myTaste.myName)
+      if (theirTaste?.dimensions) setTheirDimensions(theirTaste.dimensions)
     })
   }, [params])
 
@@ -366,62 +397,92 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
           </div>
         ) : friend ? (
           <>
-            {/* Blended header */}
+            {/* ── Blended taste header ──────────────────────────────────── */}
             <div style={{
-              padding: '32px 28px',
-              background: 'linear-gradient(90deg, var(--s-tint) 0%, var(--bone) 50%, var(--p-tint) 100%)',
+              padding: '36px 32px',
+              background: 'linear-gradient(105deg, var(--s-tint) 0%, var(--bone) 48%, var(--p-tint) 100%)',
               border: '0.5px solid var(--paper-edge)', borderRadius: 18,
-              display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 20, alignItems: 'center',
+              display: 'grid',
+              gridTemplateColumns: '1fr auto 1fr',
+              gap: 32,
+              alignItems: 'center',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--s-ink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--serif-display)', fontSize: 24, fontWeight: 600, flexShrink: 0 }}>
-                  {myName[0]?.toUpperCase() ?? 'Y'}
+              {/* Me */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--s-ink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, flexShrink: 0 }}>
+                    {myName[0]?.toUpperCase() ?? 'Y'}
+                  </div>
+                  <div>
+                    <div className="t-meta" style={{ fontSize: 8, color: 'var(--s-ink)', letterSpacing: '0.12em' }}>YOU</div>
+                    <div style={{ fontFamily: 'var(--serif-display)', fontSize: 20, fontWeight: 500, marginTop: 2 }}>{myName}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)' }}>★ YOU</div>
-                  <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 500, marginTop: 4 }}>{myName}</div>
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'center', minWidth: 160 }}>
-                <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 32, color: 'var(--sun)', lineHeight: 1 }}>&amp;</div>
-                {sharedTastes.length > 0 && (
-                  <>
-                    <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginTop: 10 }}>★ SHARED TASTES</div>
-                    <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 5, justifyContent: 'center' }}>
-                      {sharedTastes.map(t => (
-                        <span key={t} style={{ padding: '3px 9px', borderRadius: 999, background: 'var(--paper)', color: 'var(--ink-2)', fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.04em', border: '0.5px solid var(--paper-edge)' }}>{t}</span>
-                      ))}
-                    </div>
-                  </>
+                {myDimensions && (
+                  <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                    {shortProse(myName, myDimensions)}
+                  </p>
                 )}
               </div>
 
-              <button onClick={() => router.push(`/friends/${friendId}/profile`)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'flex-end', textAlign: 'right' }}>
-                <div>
-                  <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)' }}>★ THEIR PROFILE →</div>
-                  <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 500, marginTop: 4 }}>{friend.name}</div>
-                </div>
-                <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--p-ink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--serif-display)', fontSize: 24, fontWeight: 600, flexShrink: 0 }}>
-                  {friend.name[0]?.toUpperCase()}
-                </div>
-              </button>
-            </div>
-
-            {/* Actions */}
-            <div style={{ marginTop: 22, display: 'flex', gap: 10 }}>
-              <button onClick={() => setShowRecommend(true)} className="btn" style={{ padding: '10px 18px', fontSize: 13, borderRadius: 999 }}>
-                + recommend a film
-              </button>
-            </div>
-
-            {/* Discussion prompt */}
-            {prompt && (
-              <div style={{ marginTop: 24, padding: '18px 22px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 12 }}>
-                <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 8 }}>★ TALK ABOUT THIS</div>
-                <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 15, lineHeight: 1.6 }}>{prompt}</p>
+              {/* Center: Radar */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                {myDimensions && theirDimensions ? (
+                  <BlendRadar
+                    myDimensions={myDimensions}
+                    theirDimensions={theirDimensions}
+                    myName={myName.split(' ')[0]}
+                    theirName={friend.name.split(' ')[0]}
+                  />
+                ) : (
+                  <div style={{ width: 320, height: 310, background: 'var(--paper-2)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+                  </div>
+                )}
+                <button
+                  onClick={() => router.push(`/friends/${friendId}/compatibility`)}
+                  style={{
+                    background: 'none',
+                    border: '0.5px solid var(--ink-3)',
+                    borderRadius: 999,
+                    padding: '7px 18px',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--mono)',
+                    fontSize: 9,
+                    color: 'var(--ink-3)',
+                    letterSpacing: '0.08em',
+                    transition: 'all 120ms',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--ink)'; e.currentTarget.style.color = 'var(--ink)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-3)'; e.currentTarget.style.color = 'var(--ink-3)' }}
+                >
+                  EXPLORE COMPATIBILITY →
+                </button>
               </div>
-            )}
+
+              {/* Them */}
+              <div style={{ textAlign: 'right' }}>
+                <button
+                  onClick={() => router.push(`/friends/${friendId}/profile`)}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', width: '100%' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14, justifyContent: 'flex-end' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="t-meta" style={{ fontSize: 8, color: 'var(--p-ink)', letterSpacing: '0.12em' }}>THEIR PROFILE →</div>
+                      <div style={{ fontFamily: 'var(--serif-display)', fontSize: 20, fontWeight: 500, marginTop: 2 }}>{friend.name}</div>
+                    </div>
+                    <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--p-ink)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, flexShrink: 0 }}>
+                      {friend.name[0]?.toUpperCase()}
+                    </div>
+                  </div>
+                </button>
+                {theirDimensions && (
+                  <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                    {shortProse(friend.name, theirDimensions)}
+                  </p>
+                )}
+              </div>
+            </div>
 
             {/* Tabs */}
             <div style={{ marginTop: 36, borderBottom: '0.5px solid var(--paper-edge)', display: 'flex', overflowX: 'auto' }}>

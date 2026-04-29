@@ -3,6 +3,55 @@ export type ListKind = 'watched' | 'now_playing' | 'watchlist'
 export type InterviewerPersona = 'warm' | 'blunt' | 'playful' | 'cinephile'
 export type InterviewDepth = 'short' | 'medium' | 'long'
 
+export type InterviewTopic =
+  | 'how-it-felt'
+  | 'what-worked'
+  | 'scenes-and-moments'
+  | 'key-themes'
+  | 'the-craft'
+  | 'performances'
+  | 'surprise-me'
+
+export const ALL_TOPICS: InterviewTopic[] = [
+  'how-it-felt',
+  'what-worked',
+  'scenes-and-moments',
+  'key-themes',
+  'the-craft',
+  'performances',
+  'surprise-me',
+]
+
+export const TOPIC_LABELS: Record<InterviewTopic, string> = {
+  'how-it-felt':         'how it felt',
+  'what-worked':         'what worked and what didn\'t',
+  'scenes-and-moments':  'specific scenes and moments',
+  'key-themes':          'key themes',
+  'the-craft':           'the craft',
+  'performances':        'the performances',
+  'surprise-me':         'surprise me',
+}
+
+export interface FilmBriefData {
+  emotional_question?: string
+  tone?: string
+  genres?: string[]
+  themes?: { theme: string; summary: string }[]
+  discourse?: { loved: string; wrestled_with: string; debate: string }
+  scenes?: { name: string; hook: string }[]
+  craft?: string[]
+  performances?: { actor: string; note: string }[]
+  viewer_fit?: { connects: string; bounces: string }
+  dimensions?: {
+    pace: number
+    story_engine: number
+    tone: number
+    warmth: number
+    complexity: number
+    style: number
+  }
+}
+
 export interface Film {
   id: string
   kind: FilmKind
@@ -16,6 +65,8 @@ export interface Film {
   runtime_minutes: number | null
   cast_json: CastMember[] | null
   keywords: string[] | null
+  tmdb_genres: string[] | null
+  ai_brief?: FilmBriefData | null
   fetched_at: string
 }
 
@@ -161,7 +212,7 @@ export interface TMDBSearchResult {
   director: string | null
 }
 
-export function posterUrl(path: string | null, size: 'w342' | 'w500' | 'original' = 'w342'): string | null {
+export function posterUrl(path: string | null, size: 'w92' | 'w185' | 'w342' | 'w500' | 'original' = 'w342'): string | null {
   if (!path) return null
   return `https://image.tmdb.org/t/p/${size}${path}`
 }

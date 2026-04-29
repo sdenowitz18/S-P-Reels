@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOrCacheFilm } from '@/lib/tmdb'
-import { generateFollowUp } from '@/lib/prompts/interview'
+import { generateTopicQuestion, generateLateralQuestion } from '@/lib/prompts/interview'
 import { InterviewTopic, TranscriptEntry } from '@/lib/types'
 
 export async function POST(
@@ -13,8 +13,15 @@ export async function POST(
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const { answer, topic } = await request.json() as { answer: string; topic?: InterviewTopic }
-  if (!answer) return NextResponse.json({ error: 'answer required' }, { status: 400 })
+  const { topic, action, subTopic } = await request.json() as {
+    topic: InterviewTopic
+    action: 'topic' | 'lateral'
+    subTopic?: string
+  }
+
+  if (!topic || !action) {
+    return NextResponse.json({ error: 'topic and action required' }, { status: 400 })
+  }
 
   const { data: interview, error: fetchErr } = await supabase
     .from('interviews')
@@ -25,17 +32,19 @@ export async function POST(
 
   if (fetchErr || !interview) return NextResponse.json({ error: 'interview not found' }, { status: 404 })
 
-  const transcript: TranscriptEntry[] = interview.transcript
-  transcript.push({ role: 'me', text: answer, at: new Date().toISOString() })
-
   const film = await getOrCacheFilm(supabase, interview.film_id)
+  const transcript: TranscriptEntry[] = interview.transcript
+
+  // fetch brief if available
   const { data: filmRow } = await supabase.from('films').select('ai_brief').eq('id', interview.film_id).single()
   const brief = filmRow?.ai_brief ?? null
 
-  const nextQuestion = await generateFollowUp(film, interview.interviewer, topic, transcript, brief)
+  const question = action === 'lateral'
+    ? await generateLateralQuestion(film, interview.interviewer, topic, transcript, brief)
+    : await generateTopicQuestion(film, interview.interviewer, topic, transcript, brief, subTopic)
 
-  transcript.push({ role: 'interviewer', text: nextQuestion, at: new Date().toISOString() })
+  transcript.push({ role: 'interviewer', text: question, at: new Date().toISOString() })
   await supabase.from('interviews').update({ transcript }).eq('id', id)
 
-  return NextResponse.json({ nextQuestion })
+  return NextResponse.json({ question })
 }

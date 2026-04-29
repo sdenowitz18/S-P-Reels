@@ -66,6 +66,11 @@ export default function WatchListPage() {
 
   const handleRemove = (id: string) => setEntries(prev => prev.filter(e => e.id !== id))
 
+  const handleUpdate = (updated: LibraryEntry) => {
+    setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    setPanel(prev => prev && prev.id === updated.id ? { ...prev, ...updated } : prev)
+  }
+
   const handleStartWatching = async (entry: LibraryEntry) => {
     await fetch(`/api/library/${entry.id}`, {
       method: 'PATCH',
@@ -84,6 +89,7 @@ export default function WatchListPage() {
           onClose={() => setPanel(null)}
           onRemove={() => { handleRemove(panel.id); setPanel(null) }}
           onMove={() => { handleRemove(panel.id); setPanel(null); router.push('/now-playing') }}
+          onUpdate={handleUpdate}
         />
       )}
 

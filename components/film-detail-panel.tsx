@@ -22,8 +22,10 @@ interface Props {
   onClose: () => void
   onRemove?: () => void
   onMove?: (toList: PanelList) => void
+  onUpdate?: (updated: LibraryEntry) => void
 }
 
+// ── Static star display ────────────────────────────────────────────────────────
 function StarDisplay({ stars }: { stars: number | null }) {
   if (!stars) return null
   const full = Math.floor(stars)
@@ -37,15 +39,72 @@ function StarDisplay({ stars }: { stars: number | null }) {
   )
 }
 
+// ── Inline half-star rating input ──────────────────────────────────────────────
+function StarRatingInput({
+  value,
+  onChange,
+}: {
+  value: number | null
+  onChange: (stars: number) => void
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+  const display = hover ?? value ?? 0
+
+  return (
+    <div
+      style={{ display: 'flex', gap: 2, alignItems: 'center' }}
+      onMouseLeave={() => setHover(null)}
+    >
+      {[1, 2, 3, 4, 5].map(n => {
+        const full = display >= n
+        const half = !full && display >= n - 0.5
+
+        return (
+          <div
+            key={n}
+            style={{ position: 'relative', width: 26, height: 26, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onMouseMove={e => {
+              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+              const isLeft = e.clientX - rect.left < rect.width / 2
+              setHover(isLeft ? n - 0.5 : n)
+            }}
+            onClick={e => {
+              const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+              const isLeft = e.clientX - rect.left < rect.width / 2
+              onChange(isLeft ? n - 0.5 : n)
+            }}
+          >
+            <span style={{
+              fontSize: 22,
+              color: full ? 'var(--s-ink)' : half ? 'var(--s-ink)' : 'var(--ink-4)',
+              lineHeight: 1,
+              userSelect: 'none',
+              transition: 'color 80ms',
+            }}>
+              {half ? '½' : '★'}
+            </span>
+          </div>
+        )
+      })}
+      {display > 0 && (
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-3)', marginLeft: 6, letterSpacing: '0.05em' }}>
+          {display}
+        </span>
+      )}
+    </div>
+  )
+}
+
 const LIST_LABEL: Record<string, string> = {
   watched: 'watched',
   now_playing: 'watching',
   watchlist: 'wants to watch',
 }
 
-export function FilmDetailPanel({ entry, list, reflection, onClose, onRemove, onMove }: Props) {
+export function FilmDetailPanel({ entry, list, reflection, onClose, onRemove, onMove, onUpdate }: Props) {
   const film = entry.film
   const poster = film ? posterUrl(film.poster_path, 'w342') : null
+
   const [friendEntries, setFriendEntries] = useState<FriendEntry[]>([])
   const [friends, setFriends] = useState<Friend[]>([])
   const [showRecommend, setShowRecommend] = useState(false)
@@ -56,6 +115,12 @@ export function FilmDetailPanel({ entry, list, reflection, onClose, onRemove, on
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [moving, setMoving] = useState(false)
+
+  // rating state
+  const [draftStars, setDraftStars] = useState<number | null>(entry.my_stars ?? null)
+  const [isEditingRating, setIsEditingRating] = useState(!entry.my_stars)
+  const [savingRating, setSavingRating] = useState(false)
+  const [ratingSaved, setRatingSaved] = useState(false)
 
   useEffect(() => {
     if (!film?.id) return
@@ -112,6 +177,27 @@ export function FilmDetailPanel({ entry, list, reflection, onClose, onRemove, on
     onClose()
   }
 
+  const saveRating = async () => {
+    if (!draftStars || savingRating) return
+    setSavingRating(true)
+    const res = await fetch(`/api/library/${entry.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ my_stars: draftStars }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      onUpdate?.({ ...entry, my_stars: draftStars, ...updated })
+      setIsEditingRating(false)
+      setRatingSaved(true)
+      setTimeout(() => setRatingSaved(false), 1800)
+    }
+    setSavingRating(false)
+  }
+
+  // show rating section for both watched and watchlist (user may have seen it)
+  const showRating = list === 'watched' || list === 'watchlist'
+
   return (
     <div
       onClick={onClose}
@@ -138,9 +224,52 @@ export function FilmDetailPanel({ entry, list, reflection, onClose, onRemove, on
             <div style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', marginTop: 5, fontFamily: 'var(--serif-italic)', lineHeight: 1.5 }}>
               {[film?.director, film?.year, film?.runtime_minutes ? `${film.runtime_minutes} min` : null].filter(Boolean).join(' · ')}
             </div>
-            {entry.my_stars ? <div style={{ marginTop: 10 }}><StarDisplay stars={entry.my_stars} /></div> : null}
+            {/* Rating display / edit toggle */}
+            {showRating && !isEditingRating && entry.my_stars && (
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <StarDisplay stars={draftStars ?? entry.my_stars} />
+                <button
+                  onClick={() => setIsEditingRating(true)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)', padding: 0 }}
+                >
+                  edit
+                </button>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Inline rating section */}
+        {showRating && (isEditingRating || !entry.my_stars) && (
+          <div style={{ marginBottom: 22, padding: '16px 18px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 12 }}>
+            <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 12 }}>
+              {entry.my_stars ? 'EDIT YOUR RATING' : 'RATE THIS FILM'}
+            </div>
+            <StarRatingInput value={draftStars} onChange={setDraftStars} />
+            <div style={{ marginTop: 14, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                onClick={saveRating}
+                disabled={!draftStars || savingRating}
+                className="btn"
+                style={{ padding: '8px 18px', fontSize: 12, borderRadius: 999, opacity: !draftStars || savingRating ? 0.4 : 1 }}
+              >
+                {savingRating ? 'saving…' : 'save rating →'}
+              </button>
+              {entry.my_stars && (
+                <button
+                  onClick={() => { setIsEditingRating(false); setDraftStars(entry.my_stars ?? null) }}
+                  className="btn btn-soft"
+                  style={{ padding: '8px 14px', fontSize: 12, borderRadius: 999 }}
+                >
+                  cancel
+                </button>
+              )}
+              {ratingSaved && (
+                <span style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>✓ saved</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* My line */}
         {entry.my_line && (
@@ -266,7 +395,11 @@ export function FilmDetailPanel({ entry, list, reflection, onClose, onRemove, on
                     <span style={{ fontFamily: 'var(--serif-body)', fontSize: 13, fontWeight: 500 }}>{fe.user?.name}</span>
                     <span style={{ fontStyle: 'italic', fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)', marginLeft: 6 }}>{LIST_LABEL[fe.list] ?? fe.list}</span>
                   </div>
-                  {fe.my_stars && <StarDisplay stars={fe.my_stars} />}
+                  {fe.my_stars != null && (
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--s-ink)', letterSpacing: '0.04em', flexShrink: 0 }}>
+                      {fe.my_stars.toFixed(1)}★
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

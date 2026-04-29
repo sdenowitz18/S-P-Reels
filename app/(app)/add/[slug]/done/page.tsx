@@ -87,14 +87,6 @@ export default function DonePage({ params }: { params: Promise<{ slug: string }>
       } catch {}
 
       if (filmData.id) {
-        try {
-          const filmRes = await fetch(`/api/films/${filmData.id}`)
-          if (filmRes.ok) {
-            const fullFilm = await filmRes.json()
-            setNeutralTags((fullFilm.keywords ?? []).slice(0, 5))
-          }
-        } catch {}
-
         setLoadingSimilar(true)
         try {
           const simRes = await fetch(`/api/films/${filmData.id}/similar`)
@@ -198,16 +190,6 @@ export default function DonePage({ params }: { params: Promise<{ slug: string }>
           </section>
         )}
 
-        {/* Neutral tags (rate-only) */}
-        {!hasSentiment && neutralTags.length > 0 && (
-          <section style={{ margin: '36px 64px 0' }}>
-            <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 14 }}>★ THEMES IN THIS FILM</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {neutralTags.map(t => <TagPill key={t} label={t} onRemove={() => setNeutralTags(p => p.filter(x => x !== t))} />)}
-            </div>
-            <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', margin: '10px 0 0', fontFamily: 'var(--serif-italic)' }}>× out any that don't resonate</p>
-          </section>
-        )}
 
         {/* Recommend */}
         {film && (

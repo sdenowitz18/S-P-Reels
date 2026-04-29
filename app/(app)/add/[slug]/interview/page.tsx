@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
-import { TMDBSearchResult, InterviewerPersona, InterviewDepth } from '@/lib/types'
+import { TMDBSearchResult, InterviewerPersona, InterviewTopic, ALL_TOPICS, TOPIC_LABELS } from '@/lib/types'
+import { FilmBrief } from '@/lib/prompts/film-brief'
 
 interface Message { role: 'interviewer' | 'me'; text: string }
 
@@ -13,29 +14,32 @@ const INTERVIEWERS: { id: InterviewerPersona; label: string; sub: string }[] = [
   { id: 'cinephile', label: 'cinephile', sub: 'technical, asks about craft' },
 ]
 
-const DEPTHS: { id: InterviewDepth; label: string; sub: string }[] = [
-  { id: 'short',  label: 'short',  sub: '2 questions' },
-  { id: 'medium', label: 'medium', sub: '4 questions' },
-  { id: 'long',   label: 'long',   sub: '6 questions' },
-]
-
 export default function InterviewPage({ params }: { params: Promise<{ slug: string }> }) {
   const router = useRouter()
   const [slug, setSlug] = useState('')
   const [film, setFilm] = useState<TMDBSearchResult | null>(null)
   const [phase, setPhase] = useState<'setup' | 'interview'>('setup')
   const [persona, setPersona] = useState<InterviewerPersona>('warm')
-  const [depth, setDepth] = useState<InterviewDepth>('medium')
   const [interviewId, setInterviewId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [answer, setAnswer] = useState('')
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
   const [finishing, setFinishing] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
+
+  // topic state
+  const [showTopicPicker, setShowTopicPicker] = useState(false)
+  const [currentTopic, setCurrentTopic] = useState<InterviewTopic | null>(null)
+  const [usedTopics, setUsedTopics] = useState<InterviewTopic[]>([])
+  const [brief, setBrief] = useState<FilmBrief | null>(null)
+
   const scrollRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const [topOffset, setTopOffset] = useState(100)
+  const [bottomOffset, setBottomOffset] = useState(130)
 
   useEffect(() => {
     params.then(p => {
@@ -47,12 +51,22 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, loading])
+  }, [messages, loading, showTopicPicker])
+
+  // Measure actual header + bottom bar heights so scroll area fits exactly
+  useEffect(() => {
+    const measure = () => {
+      if (headerRef.current) setTopOffset(headerRef.current.getBoundingClientRect().bottom)
+      if (bottomRef.current) setBottomOffset(bottomRef.current.getBoundingClientRect().height)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [phase, showTopicPicker])
 
   const startInterview = async () => {
     if (!film || initializing) return
     sessionStorage.setItem('sp_persona', persona)
-    sessionStorage.setItem('sp_depth', depth)
     setPhase('interview')
     setInitializing(true)
     setInitError(null)
@@ -61,17 +75,42 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
       const res = await fetch('/api/interviews/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filmId: film.id, interviewer: persona, depth }),
+        body: JSON.stringify({ filmId: film.id, interviewer: persona }),
       })
       const data = await res.json()
       if (!res.ok || !data.interviewId) throw new Error(data.error || 'failed to start interview')
       setInterviewId(data.interviewId)
-      setMessages([{ role: 'interviewer', text: data.firstQuestion }])
+      if (data.brief) setBrief(data.brief)
+      setShowTopicPicker(true)
     } catch (err) {
       setInitError(err instanceof Error ? err.message : 'something went wrong')
       setPhase('setup')
     } finally {
       setInitializing(false)
+    }
+  }
+
+  const pickTopic = async (topic: InterviewTopic) => {
+    if (!interviewId || loading) return
+    setShowTopicPicker(false)
+    setCurrentTopic(topic)
+    if (topic !== 'surprise-me') {
+      setUsedTopics(prev => prev.includes(topic) ? prev : [...prev, topic])
+    }
+    setLoading(true)
+
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/question`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, action: 'topic' }),
+      })
+      const data = await res.json()
+      if (data.question) setMessages(prev => [...prev, { role: 'interviewer', text: data.question }])
+    } catch {
+      // silently fall back
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -86,18 +125,38 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
       const res = await fetch(`/api/interviews/${interviewId}/answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answer: myAnswer }),
+        body: JSON.stringify({ answer: myAnswer, topic: currentTopic }),
       })
       const data = await res.json()
-      setLoading(false)
-      if (data.done) {
-        setDone(true)
-      } else if (data.nextQuestion) {
-        setMessages(prev => [...prev, { role: 'interviewer', text: data.nextQuestion }])
-      }
+      if (data.nextQuestion) setMessages(prev => [...prev, { role: 'interviewer', text: data.nextQuestion }])
     } catch {
+      // silently fall back
+    } finally {
       setLoading(false)
     }
+  }
+
+  const nextQuestion = async () => {
+    if (!interviewId || loading || !currentTopic) return
+    setLoading(true)
+
+    try {
+      const res = await fetch(`/api/interviews/${interviewId}/question`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: currentTopic, action: 'lateral' }),
+      })
+      const data = await res.json()
+      if (data.question) setMessages(prev => [...prev, { role: 'interviewer', text: data.question }])
+    } catch {
+      // silently fall back
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const newLineOfQuestioning = () => {
+    setShowTopicPicker(true)
   }
 
   const finishAndRate = async () => {
@@ -126,9 +185,8 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
     router.push(`/add/${slug}/rate`)
   }
 
-  const HEADER_H = 57
-  const META_H   = 49
-  const INPUT_H  = 72
+  // available topics = all except used ones; surprise-me always last
+  const availableTopics = ALL_TOPICS.filter(t => t === 'surprise-me' || !usedTopics.includes(t))
 
   // ── SETUP PHASE ──────────────────────────────────────────────────────────────
   if (phase === 'setup') {
@@ -144,13 +202,14 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
         <div style={{ padding: '48px 64px', maxWidth: 720, margin: '0 auto' }}>
           <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ SET UP YOUR INTERVIEW</div>
           <h1 className="t-display" style={{ fontSize: 44, lineHeight: 1, marginTop: 16, marginBottom: 8 }}>
-            how do you want to talk about <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>{film?.title}</span>?
+            how do you want to talk about{' '}
+            <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>{film?.title}</span>?
           </h1>
           <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', margin: '0 0 36px', lineHeight: 1.55, fontFamily: 'var(--serif-italic)' }}>
-            pick a style and length — we'll start when you're ready.
+            pick an interviewer style — you'll drive the conversation from there.
           </p>
 
-          <div style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: 36 }}>
             <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 12 }}>INTERVIEWER STYLE</div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {INTERVIEWERS.map(p => (
@@ -163,24 +222,6 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
                 }}>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{p.label}</div>
                   <div style={{ fontStyle: 'italic', fontSize: 11, color: persona === p.id ? 'rgba(255,255,255,0.6)' : 'var(--ink-3)', fontFamily: 'var(--serif-italic)', marginTop: 2 }}>{p.sub}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: 36 }}>
-            <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 12 }}>LENGTH</div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {DEPTHS.map(d => (
-                <button key={d.id} onClick={() => setDepth(d.id)} style={{
-                  padding: '10px 16px', borderRadius: 10, cursor: 'pointer',
-                  border: `${depth === d.id ? '1.5px solid var(--forest)' : '0.5px solid var(--paper-edge)'}`,
-                  background: depth === d.id ? 'var(--forest)' : 'var(--paper)',
-                  color: depth === d.id ? 'var(--paper)' : 'var(--ink)',
-                  transition: 'all 150ms',
-                  fontFamily: 'var(--mono)', fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase',
-                }}>
-                  {d.label} <span style={{ opacity: 0.6, fontSize: 10 }}>— {d.sub}</span>
                 </button>
               ))}
             </div>
@@ -225,7 +266,8 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
         </div>
       )}
 
-      <div style={{ borderBottom: '0.5px solid var(--paper-edge)', padding: '14px 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--paper)' }}>
+      {/* Header */}
+      <div ref={headerRef} style={{ borderBottom: '0.5px solid var(--paper-edge)', padding: '14px 48px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--paper)' }}>
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
           ★ THE INTERVIEW · {film?.title?.toUpperCase()} · {persona.toUpperCase()} MODE
         </div>
@@ -234,54 +276,164 @@ export default function InterviewPage({ params }: { params: Promise<{ slug: stri
         </button>
       </div>
 
-      <div ref={scrollRef} style={{ height: `calc(100vh - ${HEADER_H}px - ${META_H}px - ${INPUT_H}px)`, overflowY: 'auto', padding: '28px 48px', maxWidth: 720, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-        {initializing && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--forest)', color: 'var(--paper)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600 }}>★</div>
-            <div style={{ padding: '13px 17px', borderRadius: '4px 14px 14px 14px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)' }}>
-              <p style={{ margin: 0, fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>preparing a question…</p>
+      {/* Scrollable content area */}
+      <div
+        ref={scrollRef}
+        style={{
+          height: `calc(100vh - ${topOffset}px - ${bottomOffset}px)`,
+          overflowY: 'auto',
+          padding: showTopicPicker ? '40px 48px 40px' : '28px 48px 32px',
+          maxWidth: 720,
+          margin: '0 auto',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        {/* Topic picker */}
+        {showTopicPicker && (
+          <div>
+            <p style={{
+              fontFamily: 'var(--serif-display)',
+              fontSize: messages.length === 0 ? 28 : 20,
+              fontWeight: 500,
+              margin: '0 0 24px',
+              lineHeight: 1.2,
+            }}>
+              {messages.length === 0 ? 'what do you want to talk about?' : 'what do you want to get into next?'}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              {availableTopics.map(topic => (
+                <button
+                  key={topic}
+                  onClick={() => pickTopic(topic)}
+                  disabled={loading}
+                  style={{
+                    padding: '11px 20px',
+                    borderRadius: 999,
+                    cursor: loading ? 'default' : 'pointer',
+                    border: '0.5px solid var(--paper-edge)',
+                    background: topic === 'surprise-me' ? 'var(--bone)' : 'var(--paper)',
+                    color: 'var(--ink)',
+                    fontFamily: 'var(--serif-body)',
+                    fontSize: 14,
+                    transition: 'all 150ms',
+                    opacity: loading ? 0.4 : 1,
+                  }}
+                  onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = 'var(--bone)' }}
+                  onMouseLeave={e => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = topic === 'surprise-me' ? 'var(--bone)' : 'var(--paper)' }}
+                >
+                  {TOPIC_LABELS[topic]}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {messages.map((m, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, justifyContent: m.role === 'me' ? 'flex-end' : 'flex-start' }}>
-              {m.role === 'interviewer' && (
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--forest)', color: 'var(--paper)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, marginTop: 2 }}>★</div>
-              )}
-              <div style={{ maxWidth: '78%', padding: '13px 17px', borderRadius: m.role === 'interviewer' ? '4px 14px 14px 14px' : '14px 4px 14px 14px', background: m.role === 'interviewer' ? 'var(--bone)' : 'var(--ink)', color: m.role === 'me' ? 'var(--paper)' : 'var(--ink)', border: m.role === 'interviewer' ? '0.5px solid var(--paper-edge)' : 'none' }}>
-                <p style={{ margin: 0, fontFamily: m.role === 'interviewer' ? 'var(--serif-body)' : 'var(--serif-italic)', fontStyle: m.role === 'me' ? 'italic' : 'normal', fontSize: 15, lineHeight: 1.6 }}>{m.text}</p>
+        {/* Conversation */}
+        {!showTopicPicker && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {messages.map((m, i) => (
+              <div key={i} style={{ display: 'flex', gap: 12, justifyContent: m.role === 'me' ? 'flex-end' : 'flex-start' }}>
+                {m.role === 'interviewer' && (
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--forest)', color: 'var(--paper)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, marginTop: 2 }}>★</div>
+                )}
+                <div style={{
+                  maxWidth: '78%',
+                  padding: '13px 17px',
+                  borderRadius: m.role === 'interviewer' ? '4px 14px 14px 14px' : '14px 4px 14px 14px',
+                  background: m.role === 'interviewer' ? 'var(--bone)' : 'var(--ink)',
+                  color: m.role === 'me' ? 'var(--paper)' : 'var(--ink)',
+                  border: m.role === 'interviewer' ? '0.5px solid var(--paper-edge)' : 'none',
+                }}>
+                  <p style={{ margin: 0, fontFamily: m.role === 'interviewer' ? 'var(--serif-body)' : 'var(--serif-italic)', fontStyle: m.role === 'me' ? 'italic' : 'normal', fontSize: 15, lineHeight: 1.6 }}>{m.text}</p>
+                </div>
               </div>
-            </div>
-          ))}
-          {loading && (
-            <div style={{ display: 'flex', gap: 12 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--forest)', color: 'var(--paper)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>★</div>
-              <div style={{ padding: '13px 17px', borderRadius: '4px 14px 14px 14px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)' }}>
-                <p style={{ margin: 0, fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>thinking…</p>
+            ))}
+            {loading && (
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--forest)', color: 'var(--paper)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>★</div>
+                <div style={{ padding: '13px 17px', borderRadius: '4px 14px 14px 14px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)' }}>
+                  <p style={{ margin: 0, fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>thinking…</p>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'var(--paper)', borderTop: '0.5px solid var(--paper-edge)', padding: '14px 48px', display: 'flex', gap: 10, alignItems: 'flex-end', height: INPUT_H }}>
-        {done ? (
-          <>
-            <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', margin: 0, flex: 1, fontFamily: 'var(--serif-italic)', lineHeight: 1.5 }}>
-              that's the conversation. ready to rate it?
-            </p>
-            <button className="btn" onClick={finishAndRate} disabled={finishing} style={{ padding: '10px 20px', fontSize: 14, borderRadius: 999, whiteSpace: 'nowrap', opacity: finishing ? 0.5 : 1 }}>
-              {finishing ? 'wrapping up…' : 'rate it →'}
+      {/* Bottom bar */}
+      <div ref={bottomRef} style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        background: 'var(--paper)',
+        borderTop: '0.5px solid var(--paper-edge)',
+        padding: '12px 48px 14px',
+      }}>
+        {/* Answer input — only when conversation is active */}
+        {!showTopicPicker && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10 }}>
+            <textarea
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }}
+              placeholder="your answer… (enter to send)"
+              rows={1}
+              disabled={!interviewId || loading}
+              style={{
+                flex: 1, padding: '10px 14px',
+                background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 8,
+                fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 15, color: 'var(--ink)',
+                outline: 'none', resize: 'none', lineHeight: 1.5,
+                opacity: !interviewId ? 0.4 : 1,
+              }}
+            />
+            <button
+              onClick={submit}
+              disabled={!answer.trim() || loading || !interviewId}
+              className="btn"
+              style={{ padding: '10px 18px', borderRadius: 999, opacity: !answer.trim() || loading || !interviewId ? 0.4 : 1 }}
+            >→</button>
+          </div>
+        )}
+
+        {/* Action row — always visible once interview has started */}
+        {!showTopicPicker && interviewId && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+            <button
+              onClick={nextQuestion}
+              disabled={loading || !currentTopic}
+              style={{
+                padding: '9px 20px', borderRadius: 999,
+                cursor: loading || !currentTopic ? 'default' : 'pointer',
+                background: 'var(--bone)', border: '0.5px solid var(--paper-edge)',
+                fontFamily: 'var(--serif-body)', fontSize: 13, color: 'var(--ink)',
+                opacity: loading || !currentTopic ? 0.35 : 1, transition: 'all 150ms',
+              }}
+            >
+              next question
             </button>
-          </>
-        ) : !initializing ? (
-          <>
-            <textarea value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() } }} placeholder="your answer… (enter to send)" rows={1} disabled={!interviewId || loading} style={{ flex: 1, padding: '10px 14px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 8, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 15, color: 'var(--ink)', outline: 'none', resize: 'none', lineHeight: 1.5, opacity: !interviewId ? 0.4 : 1 }} />
-            <button onClick={submit} disabled={!answer.trim() || loading || !interviewId} className="btn" style={{ padding: '10px 18px', borderRadius: 999, opacity: !answer.trim() || loading || !interviewId ? 0.4 : 1 }}>→</button>
-          </>
-        ) : null}
+            <button
+              onClick={newLineOfQuestioning}
+              disabled={loading}
+              style={{
+                padding: '9px 20px', borderRadius: 999,
+                cursor: loading ? 'default' : 'pointer',
+                background: 'var(--bone)', border: '0.5px solid var(--paper-edge)',
+                fontFamily: 'var(--serif-body)', fontSize: 13, color: 'var(--ink)',
+                opacity: loading ? 0.35 : 1, transition: 'all 150ms',
+              }}
+            >
+              new line of questioning
+            </button>
+            <button
+              onClick={finishAndRate}
+              disabled={finishing}
+              className="btn"
+              style={{ padding: '9px 22px', fontSize: 13, borderRadius: 999, opacity: finishing ? 0.5 : 1 }}
+            >
+              {finishing ? 'wrapping up…' : 'finish →'}
+            </button>
+          </div>
+        )}
       </div>
     </AppShell>
   )
