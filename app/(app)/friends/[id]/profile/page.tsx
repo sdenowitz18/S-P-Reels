@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
-import { RadarChart } from '@/components/radar-chart'
+import { RadarChart, AXIS_INFO, AXES } from '@/components/radar-chart'
+import { DimBar } from '@/components/dim-bar'
 import { TasteDimensions } from '@/lib/prompts/taste-profile'
 
 interface GenreEntry { label: string; score: number; count: number; avgRating: number | null }
@@ -102,6 +103,7 @@ export default function FriendProfilePage({ params }: { params: Promise<{ id: st
   const [friendName, setFriendName] = useState('')
   const [taste, setTaste] = useState<TasteProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedDim, setSelectedDim] = useState<keyof TasteDimensions | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<SelectedCategory | null>(null)
 
   const panelFilms = useMemo(() => {
@@ -198,22 +200,63 @@ export default function FriendProfilePage({ params }: { params: Promise<{ id: st
             {hasEnoughData && (
               <div style={{ marginBottom: 64 }}>
                 <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 20 }}>★ THEIR TASTE</div>
-                <div style={{ display: 'flex', gap: 56, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 56, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                   <div style={{ flex: '0 0 auto' }}>
-                    <RadarChart dimensions={taste.dimensions} />
+                    <RadarChart
+                      dimensions={taste.dimensions}
+                      selectedDim={selectedDim}
+                      onSelectDim={setSelectedDim}
+                      accentColor="var(--p-ink)"
+                    />
                   </div>
                   <div style={{ flex: 1, minWidth: 240 }}>
-                    {taste.prose && (
-                      <p style={{
-                        fontFamily: 'var(--serif-display)', fontSize: 20, lineHeight: 1.6,
-                        fontWeight: 400, color: 'var(--ink)', margin: '0 0 32px', fontStyle: 'italic',
-                      }}>
-                        {taste.prose}
-                      </p>
+                    {selectedDim ? (() => {
+                      const info      = AXIS_INFO[selectedDim]
+                      const ax        = AXES.find(a => a.key === selectedDim)!
+                      const val       = taste.dimensions[selectedDim]
+                      const firstName = friendName ? friendName.split(' ')[0] : undefined
+                      return (
+                        <div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.1em', color: 'var(--p-ink)', marginBottom: 2, textTransform: 'uppercase' }}>
+                            {info.title}
+                          </div>
+                          <DimBar
+                            neg={ax.neg}
+                            pos={ax.pos}
+                            myVal={val}
+                            myColor="var(--p-ink)"
+                          />
+                          <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.65 }}>
+                            {info.describe(val, firstName)}
+                          </p>
+                          <button
+                            onClick={() => setSelectedDim(null)}
+                            style={{
+                              marginTop: 16, background: 'none', border: 'none', cursor: 'pointer',
+                              fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
+                              letterSpacing: '0.06em', padding: 0, textDecoration: 'underline',
+                              textUnderlineOffset: 3,
+                            }}
+                          >
+                            ← back to overview
+                          </button>
+                        </div>
+                      )
+                    })() : (
+                      <>
+                        {taste.prose && (
+                          <p style={{
+                            fontFamily: 'var(--serif-display)', fontSize: 20, lineHeight: 1.6,
+                            fontWeight: 400, color: 'var(--ink)', margin: '0 0 20px', fontStyle: 'italic',
+                          }}>
+                            {taste.prose}
+                          </p>
+                        )}
+                        <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.5 }}>
+                          click any label on the chart to explore that dimension.
+                        </p>
+                      </>
                     )}
-                    <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.5 }}>
-                      hover any label on the chart to understand what it means for their taste.
-                    </p>
                   </div>
                 </div>
               </div>

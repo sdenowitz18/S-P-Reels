@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { generateTasteProse, TasteDimensions } from '@/lib/prompts/taste-profile'
+import { generateTasteProse, TasteDimensions, computeTasteVector } from '@/lib/prompts/taste-profile'
 import { FilmBrief } from '@/lib/prompts/film-brief'
 import { posterUrl } from '@/lib/types'
 
@@ -28,25 +28,13 @@ export async function GET() {
   const rated = allWatched.filter(e => e.my_stars != null && e.film?.ai_brief?.dimensions)
 
   // ── Taste dimensions ────────────────────────────────────────────────────────
-  const dimTotals: Record<string, number> = Object.fromEntries(DIMS.map(d => [d, 0]))
-  const dimWeightSum: Record<string, number> = Object.fromEntries(DIMS.map(d => [d, 0]))
+  const toEntries = (rows: typeof rated) => rows.map(e => ({
+    my_stars: e.my_stars as number | null,
+    film: { ai_brief: e.film?.ai_brief ?? null },
+  }))
 
-  for (const entry of rated) {
-    const brief = entry.film.ai_brief as FilmBrief
-    const w = (entry.my_stars as number) / 5
-    for (const dim of DIMS) {
-      dimTotals[dim] += (brief.dimensions[dim] ?? 0) * w
-      dimWeightSum[dim] += w
-    }
-  }
-
-  const dimensions: TasteDimensions = {
-    pace:         dimWeightSum.pace         > 0 ? dimTotals.pace         / dimWeightSum.pace         : 0,
-    story_engine: dimWeightSum.story_engine > 0 ? dimTotals.story_engine / dimWeightSum.story_engine : 0,
-    tone:         dimWeightSum.tone         > 0 ? dimTotals.tone         / dimWeightSum.tone         : 0,
-    warmth:       dimWeightSum.warmth       > 0 ? dimTotals.warmth       / dimWeightSum.warmth       : 0,
-    complexity:   dimWeightSum.complexity   > 0 ? dimTotals.complexity   / dimWeightSum.complexity   : 0,
-    style:        dimWeightSum.style        > 0 ? dimTotals.style        / dimWeightSum.style        : 0,
+  const dimensions: TasteDimensions = computeTasteVector(toEntries(rated)) ?? {
+    pace: 0, story_engine: 0, tone: 0, warmth: 0, complexity: 0, style: 0,
   }
 
   // ── Genres — weighted score + avg rating ────────────────────────────────────

@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
+import { BlendRadar } from '@/components/blend-radar'
+import { DimBar } from '@/components/dim-bar'
 import { TasteDimensions } from '@/lib/prompts/taste-profile'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -49,9 +51,13 @@ function renderSegments(segs: ProseSegment[]) {
   )
 }
 
+// Returns a display label based on value — uses actual sign for direction,
+// magnitude determines whether to say "leaning X" vs just X
 function dimWord(v: number, neg: string, pos: string): string {
-  if (v > 0.4) return pos
-  if (v < -0.4) return neg
+  if (v > 0.5)  return pos
+  if (v > 0.15) return `leaning ${pos}`
+  if (v < -0.5) return neg
+  if (v < -0.15) return `leaning ${neg}`
   return 'in the middle'
 }
 
@@ -90,6 +96,77 @@ function overallProseSegments(
   )
 }
 
+// DIM_DETAIL functions receive the actual values (v1, v2) so direction is always
+// determined by sign — not by word labels (which have a dead zone at ±0.4).
+// avgV > 0 means both lean toward the positive pole (kinetic, expressive, dark, etc.)
+const DIM_DETAIL: Record<DimKey, {
+  alignHigh: (avgV: number) => string
+  alignMid:  (avgV: number) => string
+  diverge:   () => string
+  mixed:     (v1: number, v2: number) => string
+}> = {
+  pace: {
+    alignHigh: avg => avg > 0
+      ? `You both want momentum. Films that drag or sit too long in a scene will lose you both — you'll agree instinctively when something overstays its welcome, and you'll both reward films that know when to cut and keep moving.`
+      : `You both have patience for films that breathe. Neither of you will be restless in a slow-burn — you can sit in atmosphere together and let a film accumulate without one person willing it to move faster.`,
+    alignMid: avg => avg > 0
+      ? `You're in similar territory on pace — both leaning toward momentum without being rigid about it. Films with genuine dramatic drive tend to work; extremely slow cinema might push one of you more than the other.`
+      : `You're in similar territory on pace — both leaning patient without being hardcore slow cinema devotees. Films that breathe and develop tend to work well; extremely fast-cut editing might sit uneasily with both of you.`,
+    diverge: () => `A real gap here. One of you wants urgency and forward drive; the other is comfortable letting a film take its time. Films that land in the middle — deliberate but not durational — may be your best bet. Very fast-cut action or very slow contemplative arthouse is likely a one-sided pitch.`,
+    mixed: (v1, v2) => `Some tension on pace. ${v1 > v2 ? 'One leans faster, the other slower' : 'One wants patience, the other wants momentum'} — films with varied rhythm or genuine dramatic pacing (rather than either extreme) tend to work best for this gap.`,
+  },
+  style: {
+    alignHigh: avg => avg > 0
+      ? `You both respond to films where the visual language is doing interpretive work. Cinematography, color, production design — you're both watching for directors who have a visual argument to make, not just capturing events. You can share a frame and both see what it's doing.`
+      : `You both prefer visual restraint — filmmaking where the craft effaces itself and the story does the heavy lifting. Showy cinematography or design that calls attention to itself is more likely to feel like a distraction than a contribution to either of you.`,
+    alignMid: avg => avg > 0
+      ? `Similar instincts on visual style — both leaning expressive without needing extreme stylization. Directors with a clear visual identity tend to land well; gratuitous style-over-substance filmmaking may still test one of you.`
+      : `Similar instincts on visual style — both leaning restrained without being hostile to craft. Films where visual choices are purposeful but unobtrusive tend to work well for both of you.`,
+    diverge: () => `One of you is watching for what the visual language is doing; the other wants the camera to stay out of the way. Highly stylized filmmaking (Winding Refn, Wong Kar-wai, Gaspar Noé) and stripped-back naturalism (Dardennes, Loach) will land very differently for each of you. Mid-register direction with clear but not domineering visual choices tends to split the difference.`,
+    mixed: (v1, v2) => `Some divergence on style. The gap isn't necessarily dealbreaking, but one of you will notice when a film is visually bold in a way the other might not register. Worth being aware of when pitching something heavily stylized.`,
+  },
+  complexity: {
+    alignHigh: avg => avg > 0
+      ? `You both want something to engage with — layered subtext, ambiguity, films that don't explain themselves or resolve too cleanly. You can watch something demanding together and both find the open questions interesting rather than frustrating.`
+      : `You both prefer films that commit to clarity. Deliberately obscure or withholding films tend to feel like a test neither of you signed up for. You want to be transported, not decoded — and you share that instinct.`,
+    alignMid: avg => avg > 0
+      ? `You're reasonably aligned on complexity — both leaning toward substance without needing films to be genuinely difficult. You're comfortable with films that reward attention without requiring decoding.`
+      : `You're reasonably aligned on complexity — both preferring accessible storytelling without being closed off to depth. Films that are emotionally direct but not empty tend to work well for you both.`,
+    diverge: () => `A meaningful gap here. One of you wants depth, ambiguity, and open questions; the other wants clarity and emotional directness. Very demanding arthouse films and very straightforward genre films are each going to resonate more with one person. Mid-tier "smart accessible" films — A24 dramas, prestige thrillers — are probably your shared sweet spot.`,
+    mixed: (v1, v2) => `Some tension on how much interpretive work you want the film to leave you. Worth being direct when one of you is in the mood for something more demanding or more straightforward — the mood matters as much as the preference here.`,
+  },
+  warmth: {
+    alignHigh: avg => avg > 0
+      ? `You both respond to emotional warmth and human connection on screen. Films that achieve genuine intimacy — where you genuinely care about someone — tend to sit with both of you. You're aligned on wanting to feel for the characters, not just observe them.`
+      : `You both lean toward cooler, more detached filmmaking — films that observe rather than ask you to feel along. Sentimentality or emotional manipulation is likely to push you both away rather than pull you in. You share an appreciation for restraint.`,
+    alignMid: avg => avg > 0
+      ? `Similar emotional temperature — both leaning warm without needing films to be sentimental. Films with genuine human moments that are earned rather than manufactured tend to work well for both of you.`
+      : `Similar emotional temperature — both leaning cooler without being hostile to emotion. Films that don't ask too hard for feeling, but still have real interiority, tend to land well for both of you.`,
+    diverge: () => `One of you wants emotional intimacy and warmth; the other engages better with detachment or distance. Films that are all sentiment can feel manipulative to one person; films that are clinical can feel cold to the other. The sweet spot is usually work that earns its emotional moments rather than manufacturing them.`,
+    mixed: (v1, v2) => `A bit of divergence on emotional temperature. One tends warmer, the other cooler. Films where emotional access is present but not forced — where you earn the feeling rather than being pushed into it — tend to work well for both registers.`,
+  },
+  tone: {
+    alignHigh: avg => avg > 0
+      ? `You're both drawn to dark, morally complex cinema — work that doesn't flinch or offer easy comfort. You can watch something bleak together and both respect that the film committed to it. Tragedies, moral ambiguity, unresolved darkness are all fine by you both.`
+      : `You both prefer films that offer levity, humor, or uplift. Heavy, unrelenting cinema is more likely to feel punishing than meaningful for either of you. Comedies, lighter dramas, films that give something back — that's your shared zone.`,
+    alignMid: avg => avg > 0
+      ? `You're in similar tonal territory — both leaning toward serious or heavy films without needing everything to be relentlessly bleak. Films with genuine dramatic weight tend to work; nonstop grimness might test one of you.`
+      : `You're in similar tonal territory — both leaning lighter without being closed off to serious drama. Films with humor, warmth, or release built in tend to work best; very heavy or punishing films may land better with one person than the other.`,
+    diverge: () => `A real tonal gap. One gravitates toward dark, heavy, or bleak cinema; the other prefers work with levity or uplift. Films that take serious subjects but aren't unrelentingly grim — dark comedy, tragicomedy, drama with moments of release — tend to split the difference without requiring either of you to leave your comfort zone entirely.`,
+    mixed: (v1, v2) => `Some tonal divergence. One leans darker, the other lighter — not extreme enough to create a hard veto, but worth being aware of when you're each in different emotional headspaces.`,
+  },
+  story_engine: {
+    alignHigh: avg => avg > 0
+      ? `You both want the story to go somewhere. Narrative momentum, structure, and forward drive are what keep you both engaged — you're not going to lose each other watching a film with good genre mechanics or a tightly engineered plot.`
+      : `You're both more interested in who someone is than in what happens to them. Character psychology, relationships, and the slow accumulation of understanding about a person tend to reward you both more than narrative machinery. You can watch a film where "nothing happens" and both find it full.`,
+    alignMid: avg => avg > 0
+      ? `You're reasonably aligned here — both leaning toward narrative drive without needing airtight plot mechanics. Films with a clear sense of forward motion and well-drawn characters tend to satisfy you both.`
+      : `You're reasonably aligned here — both leaning character without being allergic to plot. Films where story serves character development rather than the other way around tend to work well for both of you.`,
+    diverge: () => `One of you is more engaged by plot mechanics and forward drive; the other responds more to character depth and interior life. Films heavy on twists or event-driven plotting will feel thin to one person; deeply interior character studies will feel slow to the other. Dramas where character and plot genuinely serve each other tend to be the safest bet.`,
+    mixed: (v1, v2) => `Some divergence on story engine. One leans toward character, the other toward plot — not so far apart that it's a dealbreaker, but it's worth knowing when pitching something that goes very hard in either direction.`,
+  },
+}
+
 function dimProseSegments(
   dim: { key: DimKey; axis: string; neg: string; pos: string },
   myName: string, theirName: string,
@@ -101,37 +178,42 @@ function dimProseSegments(
   const v2 = theirDims[dim.key]
   const diff = Math.abs(v1 - v2)
   const sameDir = (v1 >= 0 && v2 >= 0) || (v1 <= 0 && v2 <= 0)
+  const avgV = (v1 + v2) / 2
   const myWord = dimWord(v1, dim.neg, dim.pos)
   const thWord = dimWord(v2, dim.neg, dim.pos)
-  const align = alignWord(diff)
+  const detail = DIM_DETAIL[dim.key]
 
+  // Strong alignment — same direction, close values
   if (sameDir && diff < 0.35) {
     return buildSegments(
-      `${align === 'strong' ? 'Strong alignment' : 'Decent alignment'} on ${dim.axis.toLowerCase()}. Both `,
-      my, ` and `, thy, ` lean `, `${myWord}`,
-      ` — you'll rarely disagree about `,
-      dim.key === 'pace' ? 'whether a film moves too slow.' :
-      dim.key === 'tone' ? 'whether a film is too heavy or too light.' :
-      dim.key === 'warmth' ? 'whether a film has enough emotional depth.' :
-      dim.key === 'complexity' ? 'whether a film is too dense or too simple.' :
-      dim.key === 'style' ? 'whether the visual approach works.' :
-      'the shape of the story.',
+      my, ` and `, thy, ` are both on the `,
+      `${avgV > 0 ? dim.pos : dim.neg} `,
+      `end of this one. `,
+      detail.alignHigh(avgV),
     )
   }
 
-  if (!sameDir && diff > 0.5) {
+  // Moderate alignment — same direction, wider spread
+  if (sameDir && diff < 0.65) {
     return buildSegments(
-      `The biggest gap. `,
-      my, ` leans `, `${myWord}`, ` while `, thy, ` goes `, `${thWord}`,
-      `. This is where you'll need to compromise — the films in your sweet spot `,
-      `will have to split the difference on ${dim.axis.toLowerCase()}.`
+      my, ` leans `, `${myWord}`, ` and `, thy, ` leans `, `${thWord}`,
+      ` — same direction, but with some spread. `,
+      detail.alignMid(avgV),
     )
   }
 
+  // Hard divergence — opposite directions, both meaningful
+  if (!sameDir && diff > 0.5 && Math.abs(v1) > 0.2 && Math.abs(v2) > 0.2) {
+    return buildSegments(
+      my, ` runs `, `${myWord}`, ` while `, thy, ` pulls `, `${thWord}`, `. `,
+      detail.diverge(),
+    )
+  }
+
+  // Mild mixed
   return buildSegments(
-    my, ` sits `, `${myWord}`, ` and `, thy, ` sits `, `${thWord}`,
-    ` on ${dim.axis.toLowerCase()} — `,
-    `some tension here, but nothing you can't navigate with the right pick.`
+    my, ` sits `, `${myWord}`, ` and `, thy, ` sits `, `${thWord}`, `. `,
+    detail.mixed(v1, v2),
   )
 }
 
@@ -247,112 +329,6 @@ function FilmRow({
           ))}
         </div>
       )}
-    </div>
-  )
-}
-
-// ── Radar (local, with clickable labels) ──────────────────────────────────────
-
-const N = 6
-const CX = 150
-const CY = 145
-const R  = 96
-const LABEL_R = 124
-
-function angleFor(i: number) { return (i * (2 * Math.PI) / N) - Math.PI / 2 }
-function pt(i: number, radius: number) {
-  const a = angleFor(i)
-  return { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a) }
-}
-function norm(v: number) { return Math.max(0, Math.min(1, (v + 1) / 2)) }
-
-function InteractiveRadar({
-  myDims, theirDims, myName, theirName,
-  selectedDim, onSelect,
-}: {
-  myDims: TasteDimensions; theirDims: TasteDimensions
-  myName: string; theirName: string
-  selectedDim: DimKey | null; onSelect: (k: DimKey | null) => void
-}) {
-  const rings = [0.33, 0.66, 1].map(pct => {
-    const pts = DIMS.map((_, i) => pt(i, R * pct))
-    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-  })
-  const axisLines = DIMS.map((_, i) => { const tip = pt(i, R); return `M ${CX} ${CY} L ${tip.x} ${tip.y}` })
-
-  const myPts   = DIMS.map((d, i) => pt(i, R * norm(myDims[d.key])))
-  const theirPts = DIMS.map((d, i) => pt(i, R * norm(theirDims[d.key])))
-  const myPath    = myPts.map((p, i)    => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-  const theirPath = theirPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-
-  return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <svg width={300} height={290} viewBox="0 0 300 290" style={{ overflow: 'visible', display: 'block' }}>
-        {rings.map((d, i) => (
-          <path key={i} d={d} fill="none" stroke="var(--paper-edge)" strokeWidth={0.75} />
-        ))}
-        {axisLines.map((d, i) => (
-          <path key={i} d={d} stroke="var(--paper-edge)" strokeWidth={0.75} />
-        ))}
-
-        {/* Their polygon */}
-        <path d={theirPath} fill="var(--p-ink)" fillOpacity={0.12} stroke="var(--p-ink)" strokeWidth={1.5} strokeLinejoin="round" />
-        {/* My polygon */}
-        <path d={myPath} fill="var(--s-ink)" fillOpacity={0.12} stroke="var(--s-ink)" strokeWidth={1.5} strokeLinejoin="round" />
-
-        {theirPts.map((p, i) => <circle key={`t-${i}`} cx={p.x} cy={p.y} r={3} fill="var(--p-ink)" />)}
-        {myPts.map((p, i)    => <circle key={`m-${i}`} cx={p.x} cy={p.y} r={3} fill="var(--s-ink)" />)}
-
-        {/* Axis labels — clickable */}
-        {DIMS.map((dim, i) => {
-          const angle = angleFor(i)
-          const lp = { x: CX + LABEL_R * Math.cos(angle), y: CY + LABEL_R * Math.sin(angle) }
-          const myVal = myDims[dim.key]
-          const thVal = theirDims[dim.key]
-          const avg   = (myVal + thVal) / 2
-          const label = avg >= 0 ? dim.pos : dim.neg
-          const anchor = lp.x < CX - 5 ? 'end' : lp.x > CX + 5 ? 'start' : 'middle'
-          const dyOffset = lp.y < CY - 5 ? -6 : lp.y > CY + 5 ? 14 : 4
-          const isSelected = selectedDim === dim.key
-
-          return (
-            <g
-              key={dim.key}
-              style={{ cursor: 'pointer' }}
-              onClick={() => onSelect(isSelected ? null : dim.key)}
-            >
-              <circle cx={lp.x} cy={lp.y} r={20} fill="transparent" />
-              <text
-                x={lp.x}
-                y={lp.y + dyOffset}
-                textAnchor={anchor}
-                style={{
-                  fontFamily: 'var(--mono)',
-                  fontSize: isSelected ? 10 : 9,
-                  fill: isSelected ? 'var(--ink)' : 'var(--ink-3)',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  fontWeight: isSelected ? 700 : 400,
-                  transition: 'all 120ms',
-                  userSelect: 'none',
-                }}
-              >
-                {label}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: 18, justifyContent: 'center', marginTop: 4 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--s-ink)', letterSpacing: '0.04em' }}>
-          ● {myName.split(' ')[0]}
-        </span>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--p-ink)', letterSpacing: '0.04em' }}>
-          ● {theirName.split(' ')[0]}
-        </span>
-      </div>
     </div>
   )
 }
@@ -598,25 +574,40 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
                     <div style={{ fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)', letterSpacing: '0.08em', marginBottom: 10 }}>
                       CLICK A LABEL TO FOCUS
                     </div>
-                    <InteractiveRadar
-                      myDims={myData.dimensions}
-                      theirDims={theirData.dimensions}
+                    <BlendRadar
+                      myDimensions={myData.dimensions}
+                      theirDimensions={theirData.dimensions}
                       myName={myName}
                       theirName={friendName}
                       selectedDim={selectedDim}
-                      onSelect={setSelectedDim}
+                      onSelectDim={setSelectedDim}
                     />
                   </div>
 
                   <div style={{ flex: 1, minWidth: 260, paddingTop: 28 }}>
-                    {selectedDim && (
-                      <div style={{
-                        fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
-                        letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12,
-                      }}>
-                        {DIMS.find(d => d.key === selectedDim)?.axis}
-                      </div>
-                    )}
+                    {selectedDim ? (() => {
+                      const dim = DIMS.find(d => d.key === selectedDim)!
+                      return (
+                        <>
+                          <div style={{
+                            fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
+                            letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
+                          }}>
+                            {dim.axis}
+                          </div>
+                          <DimBar
+                            neg={dim.neg}
+                            pos={dim.pos}
+                            myVal={myData.dimensions[selectedDim]}
+                            myName={myFirst}
+                            myColor="var(--s-ink)"
+                            theirVal={theirData.dimensions[selectedDim]}
+                            theirName={theirFirst}
+                            theirColor="var(--p-ink)"
+                          />
+                        </>
+                      )
+                    })() : null}
                     <p style={{
                       fontFamily: 'var(--serif-display)',
                       fontSize: 18,

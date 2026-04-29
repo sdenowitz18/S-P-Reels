@@ -1,37 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { TasteDimensions } from '@/lib/prompts/taste-profile'
+import { TasteDimensions, computeTasteVector } from '@/lib/prompts/taste-profile'
 import { FilmBrief } from '@/lib/prompts/film-brief'
 import { posterUrl } from '@/lib/types'
 
 const DIMS = ['pace', 'story_engine', 'tone', 'warmth', 'complexity', 'style'] as const
-
-function tasteVector(entries: { my_stars: number | null; film: { ai_brief: unknown } }[]): TasteDimensions | null {
-  const rated = entries.filter(e => e.my_stars != null && (e.film?.ai_brief as { dimensions?: unknown } | null)?.dimensions)
-  if (rated.length < 3) return null
-
-  const totals: Record<string, number> = Object.fromEntries(DIMS.map(d => [d, 0]))
-  const weights: Record<string, number> = Object.fromEntries(DIMS.map(d => [d, 0]))
-
-  for (const e of rated) {
-    const brief = e.film.ai_brief as { dimensions: Record<string, number> }
-    const w = (e.my_stars as number) / 5
-    for (const d of DIMS) {
-      totals[d] += (brief.dimensions[d] ?? 0) * w
-      weights[d] += w
-    }
-  }
-
-  return {
-    pace:         weights.pace         > 0 ? totals.pace         / weights.pace         : 0,
-    story_engine: weights.story_engine > 0 ? totals.story_engine / weights.story_engine : 0,
-    tone:         weights.tone         > 0 ? totals.tone         / weights.tone         : 0,
-    warmth:       weights.warmth       > 0 ? totals.warmth       / weights.warmth       : 0,
-    complexity:   weights.complexity   > 0 ? totals.complexity   / weights.complexity   : 0,
-    style:        weights.style        > 0 ? totals.style        / weights.style        : 0,
-  }
-}
 
 function dotScore(filmDims: Record<string, number>, target: TasteDimensions): number {
   return DIMS.reduce((s, d) => s + (1 - Math.abs((filmDims[d] ?? 0) - target[d])) / 2, 0) / DIMS.length
@@ -72,8 +46,8 @@ export async function POST(
     film: { ai_brief: Array.isArray(r.film) ? r.film[0]?.ai_brief : r.film?.ai_brief },
   }))
 
-  const myVec    = tasteVector(toEntries(myEntries))
-  const theirVec = tasteVector(toEntries(theirEntries))
+  const myVec    = computeTasteVector(toEntries(myEntries))
+  const theirVec = computeTasteVector(toEntries(theirEntries))
 
   // Blend: average the two vectors (or use whichever exists)
   const blendVec: TasteDimensions = myVec && theirVec
