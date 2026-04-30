@@ -222,7 +222,10 @@ function dimProseSegments(
 function tasteScore(a: TasteDimensions, b: TasteDimensions): number {
   const keys = Object.keys(a) as DimKey[]
   const avg = keys.reduce((s, k) => s + Math.abs(a[k] - b[k]), 0) / keys.length
-  return Math.round((1 - avg / 2) * 100)
+  // Normalise against 0.7 (practical max avg diff with deviation-weighted vectors)
+  // rather than 2.0 (theoretical max), so the score spreads across a real range:
+  //   avg 0.1 → ~86%   avg 0.3 → ~57%   avg 0.5 → ~29%   avg ≥ 0.7 → 0%
+  return Math.round(Math.max(0, (1 - avg / 0.7) * 100))
 }
 
 function genreScore(myGenres: GenreEntry[], theirGenres: GenreEntry[]): number {
@@ -232,7 +235,8 @@ function genreScore(myGenres: GenreEntry[], theirGenres: GenreEntry[]): number {
   if (shared.length === 0) return 50
   const diffs = shared.map(k => Math.abs((myMap.get(k) ?? 0) - (theirMap.get(k) ?? 0)))
   const avg = diffs.reduce((s, d) => s + d, 0) / diffs.length
-  return Math.round(Math.max(0, Math.min(100, (1 - avg / 5) * 100)))
+  // Normalise against 2.5 stars (a meaningful genre taste gap) rather than 5.0
+  return Math.round(Math.max(0, Math.min(100, (1 - avg / 2.5) * 100)))
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
