@@ -3,6 +3,83 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 
+// ── Film strip carousel ────────────────────────────────────────────────────
+
+function FilmStrip({ films, processed }: { films: ParsedFilm[]; processed: number }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const visible   = films.slice(0, processed)
+
+  // Auto-scroll to the latest film as import progresses
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' })
+  }, [processed])
+
+  if (visible.length === 0) return null
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-4)', marginBottom: 10, letterSpacing: '0.10em' }}>
+        FILMS FLOWING IN
+      </div>
+      <div
+        ref={scrollRef}
+        style={{
+          display:   'flex',
+          gap:       8,
+          overflowX: 'auto',
+          paddingBottom: 6,
+          // hide scrollbar
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        }}
+      >
+        {visible.map((f, i) => (
+          <div
+            key={i}
+            style={{
+              flexShrink:    0,
+              width:         108,
+              padding:       '9px 11px 10px',
+              background:    f.stars ? 'var(--paper-2)' : 'var(--paper)',
+              border:        f.stars ? '0.5px solid var(--paper-edge)' : '0.5px dashed var(--paper-edge)',
+              borderRadius:  8,
+              display:       'flex',
+              flexDirection: 'column',
+              gap:           4,
+            }}
+          >
+            <div style={{
+              fontFamily:   'var(--serif-display)',
+              fontSize:     11,
+              fontWeight:   500,
+              lineHeight:   1.3,
+              overflow:     'hidden',
+              display:      '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical' as const,
+              color:        'var(--ink)',
+            }}>
+              {f.title}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)' }}>
+                {f.year ?? '—'}
+              </span>
+              {f.stars != null && (
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sun)' }}>
+                  {f.stars}★
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 interface ParsedFilm { title: string; year: number | null; stars: number | null }
 
 type Phase = 'upload' | 'preview' | 'importing' | 'done'
@@ -419,6 +496,9 @@ export default function ImportPage() {
                 </div>
               ))}
             </div>
+
+            {/* Scrolling film strip */}
+            <FilmStrip films={films} processed={processed} />
           </div>
         )}
 

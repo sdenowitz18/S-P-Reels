@@ -30,7 +30,7 @@ export default async function WelcomePage() {
     const needsRating = session.path === 'cold_start' &&
       (!session.contradictions || (session.contradictions as unknown[]).length === 0)
     const dest = needsRating
-      ? `/onboarding/setup/${session.id}`
+      ? `/onboarding/rate/${session.id}`
       : `/onboarding/interview/${session.id}`
     redirect(dest)
   }

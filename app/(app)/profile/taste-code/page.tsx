@@ -251,21 +251,123 @@ export default function MyTasteCodePage() {
           </p>
         )}
 
-        {!loading && tasteCode && (
+        {!loading && tasteCode && (() => {
+          const allEntries    = tasteCode.allEntries ?? tasteCode.entries
+          const strongCount   = allEntries.filter(e => signalTierFor(e.gap) === 'strong').length
+          const moderateCount = allEntries.filter(e => signalTierFor(e.gap) === 'moderate').length
+          const weakCount     = allEntries.filter(e => signalTierFor(e.gap) === 'weak').length
+
+          const tierColor = (tier: 'strong' | 'moderate' | 'weak') =>
+            tier === 'strong'   ? 'rgba(74,107,62,1)'
+            : tier === 'moderate' ? 'rgba(190,150,60,1)'
+            : 'rgba(160,80,60,0.55)'
+
+          const tierDots = (tier: 'strong' | 'moderate' | 'weak') => {
+            const filled = tier === 'strong' ? 3 : tier === 'moderate' ? 2 : 1
+            return [1,2,3].map(i => (
+              <span key={i} style={{
+                display: 'inline-block', width: 4, height: 4,
+                borderRadius: '50%',
+                background: i <= filled ? tierColor(tier) : 'var(--paper-edge)',
+                marginLeft: i > 1 ? 2 : 0,
+              }} />
+            ))
+          }
+
+          return (
           <div>
-            {/* Identity code badge */}
+            {/* Identity code badge + confidence dots */}
+            <div style={{ marginBottom: 32 }}>
+              <div style={{
+                display: 'inline-flex', gap: 0, alignItems: 'flex-end',
+                padding: '12px 18px 14px', background: 'var(--paper-2)',
+                border: '0.5px solid var(--paper-edge)', borderRadius: 12,
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginRight: 16 }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>YOUR CODE</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.08em' }}>CONFIDENCE</span>
+                </div>
+                {tasteCode.entries.map(e => {
+                  const tier = signalTierFor(e.gap)
+                  return (
+                    <div key={e.letter} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginRight: 14 }}>
+                      <span style={{ fontFamily: 'var(--serif-display)', fontSize: 24, fontWeight: 600, color: 'var(--s-ink)', lineHeight: 1 }}>
+                        {e.letter}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center' }}>
+                        {tierDots(tier)}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Profile confidence overview */}
             <div style={{
-              display: 'inline-flex', gap: 8, alignItems: 'center',
-              padding: '10px 16px', background: 'var(--paper-2)',
-              border: '0.5px solid var(--paper-edge)', borderRadius: 10,
-              marginBottom: 48,
+              padding: '18px 20px',
+              background: 'var(--paper-2)',
+              border: '0.5px solid var(--paper-edge)',
+              borderRadius: 10,
+              marginBottom: 20,
             }}>
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>YOUR CODE</span>
-              {tasteCode.entries.map(e => (
-                <span key={e.letter} style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, color: 'var(--s-ink)', lineHeight: 1 }}>
-                  {e.letter}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 14, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>
+                  PROFILE CONFIDENCE
                 </span>
-              ))}
+                {[
+                  { count: strongCount,   label: 'strong',    color: 'rgba(74,107,62,0.85)' },
+                  { count: moderateCount, label: 'moderate',  color: 'rgba(190,150,60,0.85)' },
+                  { count: weakCount,     label: 'unclear',   color: 'rgba(160,80,60,0.6)'  },
+                ].map(({ count, label, color }) => (
+                  <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontFamily: 'var(--serif-display)', fontSize: 17, fontWeight: 600, color }}>{count}</span>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>{label}</span>
+                  </span>
+                ))}
+              </div>
+
+              {/* 12-dot strip — one per dimension, ordered by signal strength */}
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 10 }}>
+                {allEntries.map((e, i) => {
+                  const tier = signalTierFor(e.gap)
+                  return (
+                    <div
+                      key={e.dimKey}
+                      title={`${e.label} — ${tier} signal (gap ${e.gap})`}
+                      style={{
+                        flex: 1, height: 6, borderRadius: 3,
+                        background: tierColor(tier),
+                        opacity: tier === 'weak' ? 0.35 : tier === 'moderate' ? 0.65 : 1,
+                        transition: 'opacity 200ms',
+                      }}
+                    />
+                  )
+                })}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
+                  strongest →
+                </span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
+                  → weakest
+                </span>
+              </div>
+
+              {/* Nudge if fewer than 4 strong signals */}
+              {strongCount < 4 && (
+                <p style={{
+                  marginTop: 14, marginBottom: 0,
+                  fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                  fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6,
+                  borderTop: '0.5px solid var(--paper-edge)', paddingTop: 12,
+                }}>
+                  {strongCount === 0
+                    ? 'none of your 12 dimensions have strong signal yet — log and rate more films and the profile will sharpen.'
+                    : `${12 - strongCount} dimension${12 - strongCount > 1 ? 's' : ''} are still fuzzy. the more you rate, the more precise this gets — especially across genres you haven't touched much yet.`
+                  }
+                </p>
+              )}
             </div>
 
             {/* Signal legend — mirrors DimRow visual language */}
@@ -306,7 +408,7 @@ export default function MyTasteCodePage() {
             </div>
 
             {/* All 12 dimensions */}
-            {(tasteCode.allEntries ?? tasteCode.entries).map((entry, i) => (
+            {allEntries.map((entry, i) => (
               <DimRow
                 key={entry.dimKey}
                 entry={entry}
@@ -315,7 +417,8 @@ export default function MyTasteCodePage() {
               />
             ))}
           </div>
-        )}
+          )
+        })()}
       </div>
     </AppShell>
   )

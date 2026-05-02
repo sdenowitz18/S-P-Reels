@@ -3,11 +3,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
-import { CALIBRATION_SEQUENCE } from '@/lib/taste/calibration-films'
+import { CALIBRATION_FILMS } from '@/lib/taste/calibration-films'
 import { ALL_POLES } from '@/lib/taste-code'
 import type { FilmDimensionsV2 } from '@/lib/prompts/film-brief'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+
+// How many dimensions need to be covered before the user can opt out early.
+// At 8/12 we have the top-4 code plus four more — enough for a solid profile.
+const GOOD_ENOUGH_DIMS = 8
 
 const DIM_KEYS: (keyof FilmDimensionsV2)[] = [
   'narrative_legibility',
@@ -39,7 +43,7 @@ interface DimCoverage {
 
 function computeCoverage(
   ratings: Record<string, number>,
-  films:   typeof CALIBRATION_SEQUENCE,
+  films:   typeof CALIBRATION_FILMS,
 ): Record<string, DimCoverage> {
   const ratedFilms = films.filter(f => (ratings[f.tmdb_id] ?? 0) > 0)
 
@@ -168,8 +172,8 @@ function StarRating({ onRate, disabled }: { onRate: (n: number) => void; disable
               background: 'none',
               border:     'none',
               cursor:     disabled ? 'not-allowed' : 'pointer',
-              padding:    '6px 3px',
-              fontSize:   36,
+              padding:    '4px 2px',
+              fontSize:   30,
               lineHeight: 1,
               position:   'relative',
               display:    'flex',
@@ -182,9 +186,9 @@ function StarRating({ onRate, disabled }: { onRate: (n: number) => void; disable
             {(isFull || isHalf) && (
               <span style={{
                 position:  'absolute',
-                left:      3,
-                top:       6,
-                fontSize:  36,
+                left:      2,
+                top:       4,
+                fontSize:  30,
                 lineHeight: 1,
                 color:     'var(--sun, #d4a847)',
                 clipPath:  isHalf ? 'inset(0 50% 0 0)' : 'none',
@@ -205,7 +209,7 @@ function FilmCard({
   filmData,
   animating,
 }: {
-  film:      typeof CALIBRATION_SEQUENCE[0]
+  film:      typeof CALIBRATION_FILMS[0]
   filmData:  { poster_url: string | null; title: string | null; year: number | null } | undefined
   animating: 'out' | 'in' | null
 }) {
@@ -222,7 +226,7 @@ function FilmCard({
   return (
     <div style={style} className={className}>
       <div style={{
-        width: 220, aspectRatio: '2/3', background: 'var(--paper-edge)',
+        width: 160, aspectRatio: '2/3', background: 'var(--paper-edge)',
         borderRadius: 12, overflow: 'hidden',
         boxShadow: '0 8px 32px rgba(0,0,0,0.12)', margin: '0 auto',
       }}>
@@ -243,8 +247,8 @@ function FilmCard({
         )}
       </div>
 
-      <div style={{ textAlign: 'center', marginTop: 16 }}>
-        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 18, fontWeight: 500, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 3 }}>
+      <div style={{ textAlign: 'center', marginTop: 10 }}>
+        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 16, fontWeight: 500, lineHeight: 1.25, color: 'var(--ink)', marginBottom: 2 }}>
           {title}
         </div>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.08em' }}>
@@ -336,8 +340,19 @@ export default function RatePage() {
   const [filmDataMap, setFilmDataMap] = useState<Record<string, { poster_url: string | null; title: string | null; year: number | null }>>({})
   const [justLocked, setJustLocked] = useState<string | null>(null)
   const [finalizing, setFinalizing] = useState(false)
+  const [history,    setHistory]    = useState<Array<{ filmIndex: number; ratings: Record<string, number> }>>([])
 
-  const films = CALIBRATION_SEQUENCE
+
+  // Shuffle the film pool once at session start so every user gets a different order.
+  // We keep this stable across re-renders with useState (not recomputed on every render).
+  const [films] = useState<typeof CALIBRATION_FILMS>(() => {
+    const arr = [...CALIBRATION_FILMS]
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+    }
+    return arr
+  })
   const total = films.length
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -411,6 +426,26 @@ export default function RatePage() {
 
   // ── Rate a film ───────────────────────────────────────────────────────────
 
+  // ── Shared finalize logic (called from advance AND "finish now") ──────────
+
+  const finalize = useCallback(async () => {
+    setFinalizing(true)
+    let contradictionsCount = 0
+    try {
+      const res = await fetch(`/api/onboarding/session/${id}/finalize-ratings`, { method: 'POST' })
+      const data = await res.json()
+      contradictionsCount = data.contradictions_count ?? 0
+    } catch {
+      // Best-effort
+    }
+    if (contradictionsCount > 0) {
+      setTimeout(() => router.push(`/onboarding/interview/${id}`), 2800)
+    } else {
+      await fetch(`/api/onboarding/session/${id}/complete`, { method: 'POST' }).catch(() => {})
+      setTimeout(() => router.push(`/onboarding/reveal/${id}`), 2800)
+    }
+  }, [id, router])
+
   const advance = useCallback(async (stars: number) => {
     if (!currentFilm || submitting || finalizing) return
     setSubmitting(true)
@@ -420,6 +455,9 @@ export default function RatePage() {
 
     const newCoverage    = computeCoverage(newRatings, films)
     const newlyLockedDim = DIM_KEYS.find(k => !coverage[k]?.covered && newCoverage[k]?.covered) ?? null
+
+    // Push current state to history so the user can go back
+    setHistory(h => [...h, { filmIndex, ratings: { ...ratings } }])
 
     setRatings(newRatings)
     if (newlyLockedDim) setJustLocked(newlyLockedDim)
@@ -435,16 +473,7 @@ export default function RatePage() {
     const isLast        = filmIndex >= total - 1
 
     if (newAllCovered || isLast) {
-      // All dimensions covered (or out of films) — finalize and show generating screen
-      setFinalizing(true)
-      try {
-        await fetch(`/api/onboarding/session/${id}/finalize-ratings`, { method: 'POST' })
-        await fetch(`/api/onboarding/session/${id}/complete`, { method: 'POST' })
-      } catch {
-        // Best-effort
-      }
-      // Brief pause on the generating screen, then go to reveal
-      setTimeout(() => router.push(`/onboarding/reveal/${id}`), 2800)
+      await finalize()
       return
     }
 
@@ -460,7 +489,18 @@ export default function RatePage() {
       }, 320)
     }, 300)
 
-  }, [currentFilm, submitting, finalizing, ratings, films, coverage, filmIndex, total, id, router])
+  }, [currentFilm, submitting, finalizing, ratings, films, coverage, filmIndex, total, id, finalize])
+
+  const goBack = useCallback(() => {
+    if (history.length === 0) return
+    const prev = history[history.length - 1]
+    setHistory(h => h.slice(0, -1))
+    setFilmIndex(prev.filmIndex)
+    setRatings(prev.ratings)
+    setJustLocked(null)
+    setAnimating(null)
+    setSubmitting(false)
+  }, [history])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -483,18 +523,16 @@ export default function RatePage() {
     )
   }
 
-  const progressPct = Math.round((filmIndex / total) * 100)
-
   return (
     <AppShell withAdd={false}>
       <style>{starAnimStyles}</style>
-      <div style={{ padding: '56px 64px', maxWidth: 540, margin: '0 auto' }}>
+      <div style={{ padding: '20px 64px 28px', maxWidth: 540, margin: '0 auto' }}>
 
         {/* Header */}
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 6 }}>★ TASTE SETUP</div>
 
         {/* 12 Letter Slots */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 10 }}>
             {DIM_KEYS.map(dimKey => (
               <LetterSlot
@@ -507,27 +545,66 @@ export default function RatePage() {
             ))}
           </div>
           <div style={{ textAlign: 'center', fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', letterSpacing: '0.08em' }}>
-            {lockedCount < 12 ? `${lockedCount} / 12 dimensions mapped` : 'taste profile complete'}
+            {lockedCount === 0
+              ? 'rate films to map your dimensions'
+              : lockedCount < GOOD_ENOUGH_DIMS
+              ? `${GOOD_ENOUGH_DIMS - lockedCount} more to go before you can finish`
+              : lockedCount < 12
+              ? 'solid — keep going for a sharper read, or finish now'
+              : 'all 12 dimensions mapped'}
           </div>
         </div>
 
-        {/* Progress bar */}
-        <div style={{ marginBottom: 32 }}>
+        {/* Progress bar — tracks dimension coverage, not film count */}
+        <div style={{ marginBottom: 14 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
-              FILM {Math.min(filmIndex + 1, total)} OF {total}
+              {Object.values(ratings).filter(s => s > 0).length} FILMS RATED
             </span>
-            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)' }}>
-              {Object.values(ratings).filter(s => s > 0).length} rated
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: lockedCount === 12 ? 'var(--forest)' : 'var(--ink-4)' }}>
+              {lockedCount} / 12 DIMENSIONS MAPPED
             </span>
           </div>
           <div style={{ height: 2, background: 'var(--paper-edge)', borderRadius: 1, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${progressPct}%`, background: 'var(--sun)', borderRadius: 1, transition: 'width 300ms ease' }} />
+            <div style={{ height: '100%', width: `${Math.round((lockedCount / 12) * 100)}%`, background: 'var(--forest)', borderRadius: 1, transition: 'width 500ms ease' }} />
           </div>
         </div>
 
+        {/* "Good enough" early-exit banner — appears once 8+ dims are mapped */}
+        {lockedCount >= GOOD_ENOUGH_DIMS && lockedCount < 12 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 14px', marginBottom: 14,
+            background: 'var(--forest-tint, rgba(34,85,51,0.06))',
+            border: '1px solid var(--forest, #225533)',
+            borderRadius: 10, gap: 12,
+          }}>
+            <p style={{
+              margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+              fontSize: 11, color: 'var(--ink-2)', lineHeight: 1.4,
+            }}>
+              {lockedCount} of 12 mapped — enough for a real profile. keep going or finish now.
+            </p>
+            <button
+              onClick={finalize}
+              disabled={finalizing}
+              style={{
+                flexShrink: 0,
+                background: 'var(--forest, #225533)', color: '#fff',
+                border: 'none', borderRadius: 999,
+                padding: '6px 14px', cursor: 'pointer',
+                fontFamily: 'var(--serif-display)', fontSize: 11, fontWeight: 500,
+                opacity: finalizing ? 0.5 : 1, transition: 'opacity 150ms',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              finish now →
+            </button>
+          </div>
+        )}
+
         {/* Film card */}
-        <div style={{ overflow: 'hidden', marginBottom: 28 }}>
+        <div style={{ overflow: 'hidden', marginBottom: 14 }}>
           {currentFilm && (
             <FilmCard
               film={currentFilm}
@@ -539,34 +616,54 @@ export default function RatePage() {
 
         {/* Rating UI */}
         {currentFilm && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
             <StarRating onRate={advance} disabled={submitting} />
-            <button
-              onClick={() => advance(0)}
-              disabled={submitting}
-              style={{
-                background: 'none', border: 'none',
-                cursor:     submitting ? 'not-allowed' : 'pointer',
-                fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
-                fontSize:   13, color: 'var(--ink-4)', padding: '4px 0',
-                opacity:    submitting ? 0.4 : 1, transition: 'color 120ms, opacity 120ms',
-              }}
-              onMouseEnter={e => { if (!submitting) (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-2)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)' }}
-            >
-              haven&apos;t seen →
-            </button>
+            <div style={{ marginTop: 12, borderTop: '0.5px solid var(--paper-edge)', paddingTop: 10, width: '100%', display: 'flex', justifyContent: 'center' }}>
+              <button
+                onClick={() => advance(0)}
+                disabled={submitting}
+                style={{
+                  background: 'none', border: 'none',
+                  cursor:     submitting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                  fontSize:   13, color: 'var(--ink-4)', padding: '4px 0',
+                  opacity:    submitting ? 0.4 : 1, transition: 'color 120ms, opacity 120ms',
+                }}
+                onMouseEnter={e => { if (!submitting) (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-2)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)' }}
+              >
+                haven&apos;t seen →
+              </button>
+            </div>
           </div>
         )}
 
         {/* Footer */}
-        <div style={{ marginTop: 40, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button
-            onClick={() => router.push('/home')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', padding: 0 }}
-          >
-            finish later →
-          </button>
+        <div style={{ marginTop: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <button
+              onClick={goBack}
+              disabled={history.length === 0 || submitting || finalizing}
+              style={{
+                background: 'none', border: 'none',
+                cursor: history.length === 0 ? 'default' : 'pointer',
+                fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                fontSize: 12, color: 'var(--ink-3)', padding: 0,
+                opacity: history.length === 0 ? 0.2 : (submitting || finalizing) ? 0.4 : 1,
+                transition: 'color 120ms, opacity 120ms',
+              }}
+              onMouseEnter={e => { if (history.length > 0 && !submitting) (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-3)' }}
+            >
+              ← back
+            </button>
+            <button
+              onClick={() => router.push('/home')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', padding: 0 }}
+            >
+              finish later →
+            </button>
+          </div>
           <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', textAlign: 'right', maxWidth: 200, lineHeight: 1.5 }}>
             rate {MIN_FILMS_PER_POLE}+ films per dimension to unlock each slot
           </p>

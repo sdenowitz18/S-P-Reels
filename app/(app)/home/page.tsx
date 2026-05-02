@@ -2,6 +2,17 @@
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { useIsMobile } from '@/lib/use-is-mobile'
+import useSWR from 'swr'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
+interface ResumeSession {
+  id:                  string
+  path:                string
+  contradictions_count: number
+  needs_rating:        boolean
+  current_step:        number
+}
 
 function DoorCard({ tag, title, sub, cta, onClick, tint, ink, paper }: {
   tag: string; title: React.ReactNode; sub: string; cta: string
@@ -53,12 +64,51 @@ export default function HomePage() {
   const isMobile = useIsMobile()
   const day = new Date().toLocaleDateString('en', { weekday: 'long' }).toLowerCase()
 
+  const { data: resumeData } = useSWR<{ session: ResumeSession | null }>('/api/onboarding/resume', fetcher)
+  const resumeSession = resumeData?.session ?? null
+
   return (
     <AppShell active="home">
       <div style={{ padding: isMobile ? '28px 16px 96px' : '56px 64px 80px', maxWidth: 1280, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
           ★ {day.toUpperCase()} EVENING · YOUR ROOM
         </div>
+
+        {/* Resume taste setup banner */}
+        {resumeSession && (
+          <button
+            onClick={() => {
+              const dest = resumeSession.needs_rating
+                ? `/onboarding/rate/${resumeSession.id}`
+                : `/onboarding/interview/${resumeSession.id}`
+              router.push(dest)
+            }}
+            style={{
+              width: '100%', textAlign: 'left', cursor: 'pointer',
+              marginTop: 20, padding: isMobile ? '14px 16px' : '16px 22px',
+              background: 'var(--s-paper)', border: '1px solid var(--s-ink)',
+              borderRadius: 12, display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', gap: 12,
+              transition: 'all 150ms',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--s-tint)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--s-paper)' }}
+          >
+            <div>
+              <div className="t-meta" style={{ fontSize: 9, color: 'var(--s-ink)', marginBottom: 4 }}>
+                ★ TASTE SETUP IN PROGRESS
+              </div>
+              <div style={{ fontFamily: 'var(--serif-display)', fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>
+                {resumeSession.needs_rating
+                  ? 'continue rating films →'
+                  : `continue your interview · question ${resumeSession.current_step + 1} of ${resumeSession.contradictions_count} →`}
+              </div>
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--s-ink)', whiteSpace: 'nowrap', letterSpacing: '0.06em' }}>
+              RESUME
+            </div>
+          </button>
+        )}
 
         <div style={{ marginTop: 28, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? 12 : 22 }}>
           <DoorCard
