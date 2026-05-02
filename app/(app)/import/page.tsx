@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 
@@ -8,6 +8,83 @@ interface ParsedFilm { title: string; year: number | null; stars: number | null 
 type Phase = 'upload' | 'preview' | 'importing' | 'done'
 
 const CHUNK = 15 // films per batch
+
+// ── Letter slot animation ──────────────────────────────────────────────────
+
+interface LetterState { letter: string; locked: boolean }
+
+function LetterSlots({
+  letters,
+  filmCount,
+  label,
+}: {
+  letters: LetterState[]
+  filmCount: number
+  label?: string
+}) {
+  const slots: (LetterState | null)[] = [0, 1, 2, 3].map(i => letters[i] ?? null)
+
+  return (
+    <div style={{ margin: '28px 0 20px' }}>
+      {/* Slots */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginBottom: 14 }}>
+        {slots.map((slot, i) => {
+          const revealed = !!slot
+          return (
+            <div
+              key={i}
+              style={{
+                width: 68,
+                height: 84,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: slot?.locked
+                  ? '1.5px solid var(--s-ink)'
+                  : revealed
+                    ? '1px solid var(--paper-edge)'
+                    : '1px dashed var(--paper-edge)',
+                borderRadius: 10,
+                background: slot?.locked
+                  ? 'var(--s-tint)'
+                  : revealed
+                    ? 'var(--paper-2)'
+                    : 'transparent',
+                transition: 'all 500ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                fontFamily: 'var(--serif-display)',
+                fontSize: revealed ? 40 : 28,
+                fontWeight: revealed ? 500 : 300,
+                color: slot?.locked
+                  ? 'var(--s-ink)'
+                  : revealed
+                    ? 'var(--ink)'
+                    : 'var(--paper-edge)',
+                letterSpacing: '0.01em',
+              }}
+            >
+              {slot ? slot.letter : '?'}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Caption */}
+      <div style={{
+        textAlign: 'center',
+        fontFamily: 'var(--mono)',
+        fontSize: 10,
+        color: 'var(--ink-4)',
+        letterSpacing: '0.08em',
+      }}>
+        {filmCount > 0
+          ? label ?? `${filmCount} FILMS ANALYSED`
+          : 'READING YOUR HISTORY…'}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────
 
 export default function ImportPage() {
   const router = useRouter()
@@ -18,10 +95,12 @@ export default function ImportPage() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [films, setFilms] = useState<ParsedFilm[]>([])
 
-  // brief generation
+  // enrichment + session
   const [briefsRunning, setBriefsRunning] = useState(false)
   const [briefsDone, setBriefsDone] = useState(false)
-  const [briefsGenerated, setBriefsGenerated] = useState(0)
+  const [briefsGenerated, setBriefsGenerated] = useState(false)
+  const [sessionStarting, setSessionStarting] = useState(false)
+  const [notReady, setNotReady] = useState(false)
 
   // import progress
   const [imported, setImported] = useState(0)
@@ -31,6 +110,27 @@ export default function ImportPage() {
   const [notFoundTitles, setNotFoundTitles] = useState<string[]>([])
   const [total, setTotal] = useState(0)
   const [processed, setProcessed] = useState(0)
+
+  // live taste preview
+  const [tasteLetters, setTasteLetters] = useState<LetterState[]>([])
+  const [tasteFilmCount, setTasteFilmCount] = useState(0)
+
+  const fetchTastePreview = useCallback(async () => {
+    try {
+      const res = await fetch('/api/import/taste-preview')
+      if (!res.ok) return
+      const data = await res.json()
+      if (Array.isArray(data.allLetters) && data.allLetters.length > 0) {
+        setTasteLetters(data.allLetters.slice(0, 4).map((e: { letter: string; locked: boolean }) => ({
+          letter: e.letter,
+          locked: e.locked,
+        })))
+        setTasteFilmCount(data.filmCount ?? 0)
+      } else if (data.filmCount > 0) {
+        setTasteFilmCount(data.filmCount)
+      }
+    } catch { /* silent */ }
+  }, [])
 
   const handleFile = async (file: File) => {
     setParsing(true)
@@ -90,6 +190,8 @@ export default function ImportPage() {
         setFailed(prev => prev + chunk.length)
       }
       setProcessed(prev => prev + chunk.length)
+      // Refresh taste preview after each chunk
+      await fetchTastePreview()
     }
 
     setPhase('done')
@@ -98,9 +200,8 @@ export default function ImportPage() {
   const generateBriefs = async () => {
     setBriefsRunning(true)
     try {
-      const res = await fetch('/api/import/generate-briefs', { method: 'POST' })
-      const data = await res.json()
-      setBriefsGenerated(data.generated ?? 0)
+      await fetch('/api/import/generate-briefs', { method: 'POST' })
+      setBriefsGenerated(true)
       setBriefsDone(true)
     } catch {
       setBriefsDone(true)
@@ -108,6 +209,47 @@ export default function ImportPage() {
       setBriefsRunning(false)
     }
   }
+
+  const startSession = async () => {
+    setSessionStarting(true)
+    try {
+      const res = await fetch('/api/onboarding/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trigger: 'post_import' }),
+      })
+      const data = await res.json()
+      if (data.session_id && data.path !== 'not_ready' && data.path !== 'checkin') {
+        router.push(`/onboarding/interview/${data.session_id}`)
+      } else {
+        setNotReady(true)
+        setSessionStarting(false)
+      }
+    } catch {
+      setSessionStarting(false)
+    }
+  }
+
+  // Auto-trigger enrichment when import completes
+  useEffect(() => {
+    if (phase === 'done' && !briefsRunning && !briefsDone) {
+      generateBriefs()
+    }
+  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After enrichment, start the interview session
+  useEffect(() => {
+    if (briefsDone && !sessionStarting && !notReady) {
+      startSession()
+    }
+  }, [briefsDone]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll taste-preview while briefs are generating
+  useEffect(() => {
+    if (!briefsRunning) return
+    const id = setInterval(fetchTastePreview, 3000)
+    return () => clearInterval(id)
+  }, [briefsRunning, fetchTastePreview])
 
   const rated = films.filter(f => f.stars != null)
   const unrated = films.filter(f => f.stars == null)
@@ -223,7 +365,30 @@ export default function ImportPage() {
         {/* Importing phase */}
         {phase === 'importing' && (
           <div>
-            <div style={{ marginBottom: 24 }}>
+            {/* Live taste code preview — hero section */}
+            <div style={{
+              padding: '28px 24px 24px',
+              background: 'var(--paper-2)',
+              border: '0.5px solid var(--paper-edge)',
+              borderRadius: 14,
+              marginBottom: 28,
+              textAlign: 'center',
+            }}>
+              <div style={{
+                fontFamily: 'var(--serif-italic)',
+                fontStyle: 'italic',
+                fontSize: 13,
+                color: 'var(--ink-3)',
+                marginBottom: 4,
+              }}>
+                your taste code is taking shape
+              </div>
+
+              <LetterSlots letters={tasteLetters} filmCount={tasteFilmCount} />
+            </div>
+
+            {/* Progress */}
+            <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em' }}>
                   IMPORTING…
@@ -232,7 +397,7 @@ export default function ImportPage() {
                   {processed} / {total}
                 </span>
               </div>
-              <div style={{ height: 4, background: 'var(--paper-2)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: 3, background: 'var(--paper-2)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{
                   height: '100%',
                   width: total > 0 ? `${(processed / total) * 100}%` : '0%',
@@ -242,6 +407,7 @@ export default function ImportPage() {
                 }} />
               </div>
             </div>
+
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               {[
                 { label: 'imported', value: imported, color: 'var(--forest)' },
@@ -289,42 +455,82 @@ export default function ImportPage() {
               )}
             </div>
 
-            {/* Brief generation */}
-            {!briefsDone && (
-              <div style={{ marginBottom: 24, padding: '18px 22px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 12 }}>
-                <div style={{ fontFamily: 'var(--serif-display)', fontSize: 15, fontWeight: 500, marginBottom: 6 }}>
-                  build your taste profile
+            {/* Enrichment + live taste code — auto-triggered */}
+            {!notReady && (
+              <div style={{
+                padding: '28px 24px 24px',
+                background: 'var(--paper-2)',
+                border: '0.5px solid var(--paper-edge)',
+                borderRadius: 14,
+                textAlign: 'center',
+              }}>
+                <div style={{
+                  fontFamily: 'var(--serif-italic)',
+                  fontStyle: 'italic',
+                  fontSize: 13,
+                  color: 'var(--ink-3)',
+                  marginBottom: 4,
+                }}>
+                  {!briefsDone ? 'mapping your taste across 12 dimensions…' : 'almost there…'}
                 </div>
-                <p style={{ margin: '0 0 14px', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', fontFamily: 'var(--serif-italic)', lineHeight: 1.55 }}>
-                  generate ai briefs for your imported films — this powers your radar chart, genre breakdown, and film signature. takes a few minutes.
-                </p>
-                <button
-                  onClick={generateBriefs}
-                  disabled={briefsRunning}
-                  className="btn"
-                  style={{ padding: '10px 20px', fontSize: 13, borderRadius: 999, opacity: briefsRunning ? 0.6 : 1 }}
-                >
-                  {briefsRunning ? 'generating… (this takes a few minutes)' : 'generate taste profile →'}
-                </button>
+
+                <LetterSlots
+                  letters={tasteLetters}
+                  filmCount={tasteFilmCount}
+                  label={!briefsDone ? undefined : 'FINALISING YOUR TASTE CODE'}
+                />
+
+                {/* Pulse indicator */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <div style={{
+                    width: 7, height: 7, borderRadius: '50%',
+                    background: briefsDone && sessionStarting ? 'var(--forest)' : 'var(--sun)',
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                  }} />
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
+                    {!briefsDone
+                      ? 'BUILDING YOUR TASTE PROFILE…'
+                      : sessionStarting
+                        ? 'STARTING YOUR INTERVIEW…'
+                        : 'DONE'}
+                  </div>
+                </div>
               </div>
             )}
 
-            {briefsDone && (
-              <div style={{ marginBottom: 24, padding: '14px 18px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 10 }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--forest)', letterSpacing: '0.06em' }}>
-                  ✓ {briefsGenerated} briefs generated — your taste profile is ready
-                </span>
+            {/* Fallback: not enough data for interview */}
+            {notReady && (
+              <div>
+                {tasteLetters.length > 0 && (
+                  <div style={{
+                    padding: '20px 24px 16px',
+                    background: 'var(--paper-2)',
+                    border: '0.5px solid var(--paper-edge)',
+                    borderRadius: 14,
+                    textAlign: 'center',
+                    marginBottom: 20,
+                  }}>
+                    <LetterSlots letters={tasteLetters} filmCount={tasteFilmCount} />
+                  </div>
+                )}
+                <div style={{ marginBottom: 20, padding: '18px 22px', background: 'var(--bone)', border: '0.5px solid var(--paper-edge)', borderRadius: 12 }}>
+                  <div style={{ fontFamily: 'var(--serif-display)', fontSize: 15, fontWeight: 500, marginBottom: 6 }}>
+                    still building your library
+                  </div>
+                  <p style={{ margin: 0, fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', fontFamily: 'var(--serif-italic)', lineHeight: 1.55 }}>
+                    we need at least 30 rated films to run your taste interview. keep logging films and we'll let you know when you're ready.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => router.push('/movies')} className="btn" style={{ padding: '12px 22px', fontSize: 14, borderRadius: 999 }}>
+                    see your films →
+                  </button>
+                  <button onClick={() => router.push('/home')} className="btn btn-soft" style={{ padding: '12px 18px', fontSize: 13, borderRadius: 999 }}>
+                    go to home
+                  </button>
+                </div>
               </div>
             )}
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => router.push('/movies')} className="btn" style={{ padding: '12px 22px', fontSize: 14, borderRadius: 999 }}>
-                see your films →
-              </button>
-              <button onClick={() => router.push('/profile')} className="btn btn-soft" style={{ padding: '12px 18px', fontSize: 13, borderRadius: 999 }}>
-                view taste profile
-              </button>
-            </div>
           </div>
         )}
       </div>

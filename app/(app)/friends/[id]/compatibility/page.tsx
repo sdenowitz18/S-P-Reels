@@ -3,13 +3,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
-import { BlendRadar } from '@/components/blend-radar'
-import { DimBar } from '@/components/dim-bar'
 import { TasteDimensions } from '@/lib/prompts/taste-profile'
+import { TasteCode, TasteCodeEntry, compareTaskCodes, POLE_BY_LETTER } from '@/lib/taste-code'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface GenreEntry { label: string; score: number; count: number; avgRating: number | null }
+interface GenreEntry { label: string; score: number; count: number; avgRating: number | null; weightedScore?: number }
+interface SimpleGenreEntry { label: string; avgRating: number; count: number; weightedScore?: number }
 interface LibraryFilm {
   film_id: string; title: string; year: number | null; poster_path: string | null
   director: string | null; genres: string[]; cast: string[]; my_stars: number | null
@@ -19,24 +19,16 @@ interface TasteData {
   friendName?: string
   dimensions: TasteDimensions
   genres: GenreEntry[]
+  simpleGenres: SimpleGenreEntry[]
+  overallAvg: number
   libraryFilms: LibraryFilm[]
   filmCount: number
   ratedCount: number
+  tasteCode?: TasteCode | null
 }
 
 type DimKey = keyof TasteDimensions
 type TabId = 'taste' | 'genre'
-
-// ── Dimension metadata ────────────────────────────────────────────────────────
-
-const DIMS: { key: DimKey; axis: string; neg: string; pos: string }[] = [
-  { key: 'pace',         axis: 'Pace',          neg: 'patient',       pos: 'kinetic'       },
-  { key: 'style',        axis: 'Visual Style',  neg: 'restrained',    pos: 'expressive'    },
-  { key: 'complexity',   axis: 'Complexity',    neg: 'accessible',    pos: 'complex'       },
-  { key: 'warmth',       axis: 'Warmth',        neg: 'cool',          pos: 'warm'          },
-  { key: 'tone',         axis: 'Tone',          neg: 'light',         pos: 'dark'          },
-  { key: 'story_engine', axis: 'Story Engine',  neg: 'character',     pos: 'plot-driven'   },
-]
 
 // ── Prose builders ────────────────────────────────────────────────────────────
 
@@ -51,169 +43,44 @@ function renderSegments(segs: ProseSegment[]) {
   )
 }
 
-// Returns a display label based on value — uses actual sign for direction,
-// magnitude determines whether to say "leaning X" vs just X
-function dimWord(v: number, neg: string, pos: string): string {
-  if (v > 0.5)  return pos
-  if (v > 0.15) return `leaning ${pos}`
-  if (v < -0.5) return neg
-  if (v < -0.15) return `leaning ${neg}`
-  return 'in the middle'
+// ── Dimension axis labels ─────────────────────────────────────────────────────
+
+const DIM_AXIS_LABEL: Record<string, string> = {
+  narrative_legibility:    'Legible ← → Opaque',
+  emotional_directness:    'Vivid ← → Subtle',
+  plot_vs_character:       'Plot ← → Character',
+  naturalistic_vs_stylized:'Naturalistic ← → Theatrical',
+  narrative_closure:       'Whole ← → Questioning',
+  intimate_vs_epic:        'Intimate ← → Epic',
+  accessible_vs_demanding: 'Familiar ← → Demanding',
+  psychological_safety:    'Hopeful ← → Unsettling',
+  moral_clarity:           'Just ← → Ambiguous',
+  behavioral_realism:      'Realistic ← → Archetypal',
+  sensory_vs_intellectual: 'Gut ← → Mind',
+  kinetic_vs_patient:      'Kinetic ← → Zen',
 }
 
-function alignWord(diff: number): string {
-  if (diff < 0.3) return 'strong'
-  if (diff < 0.6) return 'decent'
-  return 'weak'
-}
+// ── Score bar ─────────────────────────────────────────────────────────────────
 
-function overallProseSegments(
-  myName: string, theirName: string,
-  myDims: TasteDimensions, theirDims: TasteDimensions
-): ProseSegment[] {
-  const my  = { name: myName,    color: 'var(--s-ink)' }
-  const thy = { name: theirName, color: 'var(--p-ink)' }
-
-  // Find strongest alignment and strongest divergence
-  const diffs = DIMS.map(d => ({ ...d, diff: Math.abs(myDims[d.key] - theirDims[d.key]) }))
-  const aligned = [...diffs].sort((a, b) => a.diff - b.diff).slice(0, 2)
-  const diverged = [...diffs].sort((a, b) => b.diff - a.diff)[0]
-
-  const a0 = aligned[0]
-  const a1 = aligned[1]
-  const myA0Word  = dimWord(myDims[a0.key],  a0.neg, a0.pos)
-  const myA1Word  = dimWord(myDims[a1.key],  a1.neg, a1.pos)
-  const myDivWord = dimWord(myDims[diverged.key],  diverged.neg, diverged.pos)
-  const thDivWord = dimWord(theirDims[diverged.key], diverged.neg, diverged.pos)
-
-  return buildSegments(
-    my, ` and `, thy, ` both land on the `,
-    `${myA0Word} end of ${a0.axis.toLowerCase()}, and tend toward `,
-    `${myA1Word} on ${a1.axis.toLowerCase()} — `,
-    `a solid foundation for picking films together. `,
-    `The clearest gap is on ${diverged.axis.toLowerCase()}: `,
-    my, ` runs ${myDivWord} while `, thy, ` pulls ${thDivWord}.`
-  )
-}
-
-// DIM_DETAIL functions receive the actual values (v1, v2) so direction is always
-// determined by sign — not by word labels (which have a dead zone at ±0.4).
-// avgV > 0 means both lean toward the positive pole (kinetic, expressive, dark, etc.)
-const DIM_DETAIL: Record<DimKey, {
-  alignHigh: (avgV: number) => string
-  alignMid:  (avgV: number) => string
-  diverge:   () => string
-  mixed:     (v1: number, v2: number) => string
-}> = {
-  pace: {
-    alignHigh: avg => avg > 0
-      ? `You both want momentum. Films that drag or sit too long in a scene will lose you both — you'll agree instinctively when something overstays its welcome, and you'll both reward films that know when to cut and keep moving.`
-      : `You both have patience for films that breathe. Neither of you will be restless in a slow-burn — you can sit in atmosphere together and let a film accumulate without one person willing it to move faster.`,
-    alignMid: avg => avg > 0
-      ? `You're in similar territory on pace — both leaning toward momentum without being rigid about it. Films with genuine dramatic drive tend to work; extremely slow cinema might push one of you more than the other.`
-      : `You're in similar territory on pace — both leaning patient without being hardcore slow cinema devotees. Films that breathe and develop tend to work well; extremely fast-cut editing might sit uneasily with both of you.`,
-    diverge: () => `A real gap here. One of you wants urgency and forward drive; the other is comfortable letting a film take its time. Films that land in the middle — deliberate but not durational — may be your best bet. Very fast-cut action or very slow contemplative arthouse is likely a one-sided pitch.`,
-    mixed: (v1, v2) => `Some tension on pace. ${v1 > v2 ? 'One leans faster, the other slower' : 'One wants patience, the other wants momentum'} — films with varied rhythm or genuine dramatic pacing (rather than either extreme) tend to work best for this gap.`,
-  },
-  style: {
-    alignHigh: avg => avg > 0
-      ? `You both respond to films where the visual language is doing interpretive work. Cinematography, color, production design — you're both watching for directors who have a visual argument to make, not just capturing events. You can share a frame and both see what it's doing.`
-      : `You both prefer visual restraint — filmmaking where the craft effaces itself and the story does the heavy lifting. Showy cinematography or design that calls attention to itself is more likely to feel like a distraction than a contribution to either of you.`,
-    alignMid: avg => avg > 0
-      ? `Similar instincts on visual style — both leaning expressive without needing extreme stylization. Directors with a clear visual identity tend to land well; gratuitous style-over-substance filmmaking may still test one of you.`
-      : `Similar instincts on visual style — both leaning restrained without being hostile to craft. Films where visual choices are purposeful but unobtrusive tend to work well for both of you.`,
-    diverge: () => `One of you is watching for what the visual language is doing; the other wants the camera to stay out of the way. Highly stylized filmmaking (Winding Refn, Wong Kar-wai, Gaspar Noé) and stripped-back naturalism (Dardennes, Loach) will land very differently for each of you. Mid-register direction with clear but not domineering visual choices tends to split the difference.`,
-    mixed: (v1, v2) => `Some divergence on style. The gap isn't necessarily dealbreaking, but one of you will notice when a film is visually bold in a way the other might not register. Worth being aware of when pitching something heavily stylized.`,
-  },
-  complexity: {
-    alignHigh: avg => avg > 0
-      ? `You both want something to engage with — layered subtext, ambiguity, films that don't explain themselves or resolve too cleanly. You can watch something demanding together and both find the open questions interesting rather than frustrating.`
-      : `You both prefer films that commit to clarity. Deliberately obscure or withholding films tend to feel like a test neither of you signed up for. You want to be transported, not decoded — and you share that instinct.`,
-    alignMid: avg => avg > 0
-      ? `You're reasonably aligned on complexity — both leaning toward substance without needing films to be genuinely difficult. You're comfortable with films that reward attention without requiring decoding.`
-      : `You're reasonably aligned on complexity — both preferring accessible storytelling without being closed off to depth. Films that are emotionally direct but not empty tend to work well for you both.`,
-    diverge: () => `A meaningful gap here. One of you wants depth, ambiguity, and open questions; the other wants clarity and emotional directness. Very demanding arthouse films and very straightforward genre films are each going to resonate more with one person. Mid-tier "smart accessible" films — A24 dramas, prestige thrillers — are probably your shared sweet spot.`,
-    mixed: (v1, v2) => `Some tension on how much interpretive work you want the film to leave you. Worth being direct when one of you is in the mood for something more demanding or more straightforward — the mood matters as much as the preference here.`,
-  },
-  warmth: {
-    alignHigh: avg => avg > 0
-      ? `You both respond to emotional warmth and human connection on screen. Films that achieve genuine intimacy — where you genuinely care about someone — tend to sit with both of you. You're aligned on wanting to feel for the characters, not just observe them.`
-      : `You both lean toward cooler, more detached filmmaking — films that observe rather than ask you to feel along. Sentimentality or emotional manipulation is likely to push you both away rather than pull you in. You share an appreciation for restraint.`,
-    alignMid: avg => avg > 0
-      ? `Similar emotional temperature — both leaning warm without needing films to be sentimental. Films with genuine human moments that are earned rather than manufactured tend to work well for both of you.`
-      : `Similar emotional temperature — both leaning cooler without being hostile to emotion. Films that don't ask too hard for feeling, but still have real interiority, tend to land well for both of you.`,
-    diverge: () => `One of you wants emotional intimacy and warmth; the other engages better with detachment or distance. Films that are all sentiment can feel manipulative to one person; films that are clinical can feel cold to the other. The sweet spot is usually work that earns its emotional moments rather than manufacturing them.`,
-    mixed: (v1, v2) => `A bit of divergence on emotional temperature. One tends warmer, the other cooler. Films where emotional access is present but not forced — where you earn the feeling rather than being pushed into it — tend to work well for both registers.`,
-  },
-  tone: {
-    alignHigh: avg => avg > 0
-      ? `You're both drawn to dark, morally complex cinema — work that doesn't flinch or offer easy comfort. You can watch something bleak together and both respect that the film committed to it. Tragedies, moral ambiguity, unresolved darkness are all fine by you both.`
-      : `You both prefer films that offer levity, humor, or uplift. Heavy, unrelenting cinema is more likely to feel punishing than meaningful for either of you. Comedies, lighter dramas, films that give something back — that's your shared zone.`,
-    alignMid: avg => avg > 0
-      ? `You're in similar tonal territory — both leaning toward serious or heavy films without needing everything to be relentlessly bleak. Films with genuine dramatic weight tend to work; nonstop grimness might test one of you.`
-      : `You're in similar tonal territory — both leaning lighter without being closed off to serious drama. Films with humor, warmth, or release built in tend to work best; very heavy or punishing films may land better with one person than the other.`,
-    diverge: () => `A real tonal gap. One gravitates toward dark, heavy, or bleak cinema; the other prefers work with levity or uplift. Films that take serious subjects but aren't unrelentingly grim — dark comedy, tragicomedy, drama with moments of release — tend to split the difference without requiring either of you to leave your comfort zone entirely.`,
-    mixed: (v1, v2) => `Some tonal divergence. One leans darker, the other lighter — not extreme enough to create a hard veto, but worth being aware of when you're each in different emotional headspaces.`,
-  },
-  story_engine: {
-    alignHigh: avg => avg > 0
-      ? `You both want the story to go somewhere. Narrative momentum, structure, and forward drive are what keep you both engaged — you're not going to lose each other watching a film with good genre mechanics or a tightly engineered plot.`
-      : `You're both more interested in who someone is than in what happens to them. Character psychology, relationships, and the slow accumulation of understanding about a person tend to reward you both more than narrative machinery. You can watch a film where "nothing happens" and both find it full.`,
-    alignMid: avg => avg > 0
-      ? `You're reasonably aligned here — both leaning toward narrative drive without needing airtight plot mechanics. Films with a clear sense of forward motion and well-drawn characters tend to satisfy you both.`
-      : `You're reasonably aligned here — both leaning character without being allergic to plot. Films where story serves character development rather than the other way around tend to work well for both of you.`,
-    diverge: () => `One of you is more engaged by plot mechanics and forward drive; the other responds more to character depth and interior life. Films heavy on twists or event-driven plotting will feel thin to one person; deeply interior character studies will feel slow to the other. Dramas where character and plot genuinely serve each other tend to be the safest bet.`,
-    mixed: (v1, v2) => `Some divergence on story engine. One leans toward character, the other toward plot — not so far apart that it's a dealbreaker, but it's worth knowing when pitching something that goes very hard in either direction.`,
-  },
-}
-
-function dimProseSegments(
-  dim: { key: DimKey; axis: string; neg: string; pos: string },
-  myName: string, theirName: string,
-  myDims: TasteDimensions, theirDims: TasteDimensions
-): ProseSegment[] {
-  const my  = { name: myName,    color: 'var(--s-ink)' }
-  const thy = { name: theirName, color: 'var(--p-ink)' }
-  const v1 = myDims[dim.key]
-  const v2 = theirDims[dim.key]
-  const diff = Math.abs(v1 - v2)
-  const sameDir = (v1 >= 0 && v2 >= 0) || (v1 <= 0 && v2 <= 0)
-  const avgV = (v1 + v2) / 2
-  const myWord = dimWord(v1, dim.neg, dim.pos)
-  const thWord = dimWord(v2, dim.neg, dim.pos)
-  const detail = DIM_DETAIL[dim.key]
-
-  // Strong alignment — same direction, close values
-  if (sameDir && diff < 0.35) {
-    return buildSegments(
-      my, ` and `, thy, ` are both on the `,
-      `${avgV > 0 ? dim.pos : dim.neg} `,
-      `end of this one. `,
-      detail.alignHigh(avgV),
-    )
-  }
-
-  // Moderate alignment — same direction, wider spread
-  if (sameDir && diff < 0.65) {
-    return buildSegments(
-      my, ` leans `, `${myWord}`, ` and `, thy, ` leans `, `${thWord}`,
-      ` — same direction, but with some spread. `,
-      detail.alignMid(avgV),
-    )
-  }
-
-  // Hard divergence — opposite directions, both meaningful
-  if (!sameDir && diff > 0.5 && Math.abs(v1) > 0.2 && Math.abs(v2) > 0.2) {
-    return buildSegments(
-      my, ` runs `, `${myWord}`, ` while `, thy, ` pulls `, `${thWord}`, `. `,
-      detail.diverge(),
-    )
-  }
-
-  // Mild mixed
-  return buildSegments(
-    my, ` sits `, `${myWord}`, ` and `, thy, ` sits `, `${thWord}`, `. `,
-    detail.mixed(v1, v2),
+function ScoreBar({ score, label }: { score: number; label: string }) {
+  const color = score >= 72 ? 'var(--forest)' : score >= 52 ? 'var(--sun)' : 'var(--ink-4)'
+  return (
+    <div style={{ marginBottom: 40, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 10 }}>
+        <span style={{ fontFamily: 'var(--serif-display)', fontSize: 36, fontWeight: 600, color, lineHeight: 1 }}>
+          {score}
+        </span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
+          / 100
+        </span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', marginLeft: 8 }}>
+          {label.toUpperCase()}
+        </span>
+      </div>
+      <div style={{ width: 180, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ width: `${score}%`, height: '100%', background: color, borderRadius: 999 }} />
+      </div>
+    </div>
   )
 }
 
@@ -222,9 +89,6 @@ function dimProseSegments(
 function tasteScore(a: TasteDimensions, b: TasteDimensions): number {
   const keys = Object.keys(a) as DimKey[]
   const avg = keys.reduce((s, k) => s + Math.abs(a[k] - b[k]), 0) / keys.length
-  // Normalise against 0.7 (practical max avg diff with deviation-weighted vectors)
-  // rather than 2.0 (theoretical max), so the score spreads across a real range:
-  //   avg 0.1 → ~86%   avg 0.3 → ~57%   avg 0.5 → ~29%   avg ≥ 0.7 → 0%
   return Math.round(Math.max(0, (1 - avg / 0.7) * 100))
 }
 
@@ -235,162 +99,696 @@ function genreScore(myGenres: GenreEntry[], theirGenres: GenreEntry[]): number {
   if (shared.length === 0) return 50
   const diffs = shared.map(k => Math.abs((myMap.get(k) ?? 0) - (theirMap.get(k) ?? 0)))
   const avg = diffs.reduce((s, d) => s + d, 0) / diffs.length
-  // Normalise against 2.5 stars (a meaningful genre taste gap) rather than 5.0
   return Math.round(Math.max(0, Math.min(100, (1 - avg / 2.5) * 100)))
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── compatProse ───────────────────────────────────────────────────────────────
 
-function ScoreDisplay({ score, label }: { score: number; label: string }) {
-  const color = score >= 72 ? 'var(--forest)' : score >= 52 ? 'var(--sun)' : 'var(--ink-3)'
+function compatProse(
+  compat: ReturnType<typeof compareTaskCodes>,
+  myName: string, theirName: string,
+): ProseSegment[] {
+  const shared   = compat.filter(c => c.bucket === 'shared')
+  const opposing = compat.filter(c => c.bucket === 'opposing')
+  const my  = { name: myName,    color: 'var(--s-ink)' }
+  const thy = { name: theirName, color: 'var(--p-ink)' }
+
+  if (shared.length === 0 && opposing.length === 0) {
+    return buildSegments(
+      my, ' and ', thy,
+      ' each bring completely distinct signals — no overlap on your four strongest dimensions. ',
+      'That can mean genuine discovery: the films one of you loves may be off the other\'s radar entirely.',
+    )
+  }
+
+  if (shared.length >= 3) {
+    const labels = shared.map(c => c.myEntry!.label).join(', ')
+    const segs: ProseSegment[] = [my, ' and ', thy, ` align on most of what matters: both ${labels}.`]
+    if (opposing.length > 0) {
+      const opp = opposing[0]
+      segs.push(` The clearest split is `, my, ` leaning ${opp.myEntry!.label} while `, thy, ` pulls ${opp.theirEntry!.label} — worth knowing when pitching films that go hard in either direction.`)
+    } else {
+      segs.push(' With this much common ground, picking something together should be easy.')
+    }
+    return buildSegments(...segs)
+  }
+
+  if (shared.length > 0) {
+    const sharedLabels = shared.map(c => c.myEntry!.label).join(' and ')
+    const segs: ProseSegment[] = [my, ' and ', thy, ` share ${sharedLabels} as real common ground.`]
+    if (opposing.length === 1) {
+      const opp = opposing[0]
+      segs.push(` The main difference: `, my, ` leans ${opp.myEntry!.label} where `, thy, ` pulls ${opp.theirEntry!.label}.`)
+    } else if (opposing.length > 1) {
+      segs.push(' But they diverge on ', ...opposing.map((opp, i) => [
+        ...(i > 0 ? [' and '] as ProseSegment[] : []),
+        `${opp.myEntry!.label} vs ${opp.theirEntry!.label}` as ProseSegment,
+      ]).flat(), '.')
+    }
+    return buildSegments(...segs)
+  }
+
+  // No shared, only opposing/asymmetric
+  const segs: ProseSegment[] = [my, ' and ', thy, ' sit on opposite sides of ']
+  if (opposing.length === 1) {
+    const opp = opposing[0]
+    segs.push(`the ${opp.myEntry!.label.toLowerCase()} / ${opp.theirEntry!.label.toLowerCase()} axis — `)
+    segs.push(`films that split the difference tend to be the safest bet together.`)
+  } else {
+    segs.push(`several key dimensions — `, my, `'s strongest signals are almost always `, thy, `'s weakest, and vice versa. `)
+    segs.push('Films that genuinely hold both poles in tension are where they\'ll find common ground.')
+  }
+  return buildSegments(...segs)
+}
+
+// ── Entry detail (expanded dim view inside TasteCodeBlend) ───────────────────
+
+function EntryDetail({ entry, color, isDislikes }: {
+  entry: { description: string; filmCount: number; sampleFilms: { film_id: string; title: string; poster_path: string | null; stars: number }[] }
+  color: string
+  isDislikes: boolean
+}) {
+  const avgStars = entry.sampleFilms.length > 0
+    ? entry.sampleFilms.reduce((s, f) => s + f.stars, 0) / entry.sampleFilms.length
+    : null
+  const displayFilms = isDislikes
+    ? [...entry.sampleFilms].sort((a, b) => a.stars - b.stars).slice(0, 4)
+    : [...entry.sampleFilms].sort((a, b) => b.stars - a.stars).slice(0, 4)
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-      <span style={{ fontFamily: 'var(--serif-display)', fontSize: 56, fontWeight: 600, color, lineHeight: 1 }}>
-        {score}
-      </span>
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>
-        / 100 {label}
-      </span>
-    </div>
+    <>
+      <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 14, lineHeight: 1.65, color: 'var(--ink-2)', margin: '0 0 18px' }}>
+        {entry.description}
+      </p>
+      <div style={{ display: 'flex', gap: 20, marginBottom: 18 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, color, lineHeight: 1 }}>
+            {avgStars != null ? avgStars.toFixed(2) : '—'}
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 3 }}>AVG STARS</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>
+            {entry.filmCount}
+          </div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 3 }}>IN THIS QUARTILE</div>
+        </div>
+      </div>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.08em', marginBottom: 10 }}>
+        {isDislikes ? 'LOWEST RATED' : 'HIGHEST RATED'}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {displayFilms.map(f => (
+          <div key={f.film_id} style={{ width: 72, textAlign: 'center' }}>
+            <div style={{ width: 72, height: 108, borderRadius: 4, overflow: 'hidden', background: 'var(--paper-edge)', position: 'relative', marginBottom: 5 }}>
+              {f.poster_path && <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} />}
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color }}>{f.stars.toFixed(1)}★</div>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
 
-function PosterCard({
-  film, myStars, theirStars, myColor, theirColor,
-}: {
-  film: LibraryFilm; myStars: number | null; theirStars: number | null
-  myColor: string; theirColor: string
-}) {
-  return (
-    <div style={{ width: 90, flexShrink: 0 }}>
-      <div style={{
-        width: 90, height: 134, borderRadius: 5, overflow: 'hidden',
-        background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)',
-        position: 'relative', marginBottom: 7,
-      }}>
-        {film.poster_path
-          ? <Image src={film.poster_path} alt={film.title} fill style={{ objectFit: 'cover' }} />
-          : <div style={{
-              width: '100%', height: '100%', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', padding: 6, fontSize: 8,
-              fontFamily: 'var(--mono)', color: 'var(--ink-4)', textAlign: 'center',
-            }}>{film.title.toUpperCase()}</div>
-        }
-      </div>
-      <div style={{
-        fontFamily: 'var(--serif-body)', fontSize: 10.5, lineHeight: 1.3,
-        color: 'var(--ink)', marginBottom: 5,
-        overflow: 'hidden', display: '-webkit-box',
-        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-      }}>
-        {film.title}
-      </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        {myStars != null && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: myColor, letterSpacing: '0.02em' }}>
-            {myStars.toFixed(1)}★
-          </span>
-        )}
-        {myStars != null && theirStars != null && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>·</span>
-        )}
-        {theirStars != null && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: theirColor, letterSpacing: '0.02em' }}>
-            {theirStars.toFixed(1)}★
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
+// ── Taste Code Blend ──────────────────────────────────────────────────────────
 
-function FilmRow({
-  title, films, myColor, theirColor, emptyText,
+function TasteCodeBlend({
+  myCode, theirCode, myName, theirName,
 }: {
-  title: string; films: { film: LibraryFilm; myStars: number | null; theirStars: number | null }[]
-  myColor: string; theirColor: string; emptyText: string
+  myCode: TasteCode; theirCode: TasteCode
+  myName: string; theirName: string
 }) {
-  return (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 14 }}>
-        {title}
+  const [expandedDimKey, setExpandedDimKey] = useState<string | null>(null)
+  const [view, setView] = useState<'likes' | 'dislikes'>('likes')
+  const myFirst    = myName.split(' ')[0]
+  const theirFirst = theirName.split(' ')[0]
+
+  const likesCompat = useMemo(() => compareTaskCodes(myCode, theirCode), [myCode, theirCode])
+
+  const myAllEntries    = myCode.allEntries ?? myCode.entries
+  const theirAllEntries = theirCode.allEntries ?? theirCode.entries
+
+  // DISLIKES = same top-4 entries, rendered as their opposite poles
+  const myDisplayEntries    = myCode.entries
+  const theirDisplayEntries = theirCode.entries
+
+  // Entries for the selected dim (from full allEntries, not just display slice)
+  const myEntry    = expandedDimKey ? myAllEntries.find(e => e.dimKey === expandedDimKey) ?? null : null
+  const theirEntry = expandedDimKey ? theirAllEntries.find(e => e.dimKey === expandedDimKey) ?? null : null
+
+  // Rank of selected dim in the other person's allEntries (0-indexed) → determines description tone
+  const theirRankForExpanded = expandedDimKey
+    ? theirAllEntries.findIndex(e => e.dimKey === expandedDimKey)
+    : -1
+  const theirTone: 'strong' | 'moderate' | 'weak' =
+    theirRankForExpanded < 4 ? 'strong' : theirRankForExpanded < 8 ? 'moderate' : 'weak'
+
+  const myRankForExpanded = expandedDimKey
+    ? myAllEntries.findIndex(e => e.dimKey === expandedDimKey)
+    : -1
+  const myTone: 'strong' | 'moderate' | 'weak' =
+    myRankForExpanded < 4 ? 'strong' : myRankForExpanded < 8 ? 'moderate' : 'weak'
+
+  // Description text based on tone + view
+  // isDislikes → show negative prose about the OPPOSITE pole (what doesn't connect)
+  function descriptionFor(entry: TasteCodeEntry, tone: 'strong' | 'moderate' | 'weak', firstName: string, isDislikes: boolean): string {
+    if (isDislikes) return entry.oppNegativeDescription
+    if (tone === 'weak') return entry.negativeDescription
+    if (tone === 'moderate') return `${firstName} has a moderate relationship with this dimension — it shows up in their library but isn't a defining pull.`
+    return entry.description
+  }
+
+  function CodeRow({ displayEntries, allEntries, name, color, isMyRow }: {
+    displayEntries: TasteCodeEntry[]
+    allEntries: TasteCodeEntry[]
+    name: string
+    color: string
+    isMyRow: boolean
+  }) {
+    // If expanded dim isn't in displayEntries, find it in allEntries to show as ghost tile
+    const ghostEntry = expandedDimKey && !displayEntries.some(e => e.dimKey === expandedDimKey)
+      ? allEntries.find(e => e.dimKey === expandedDimKey) ?? null
+      : null
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color, letterSpacing: '0.1em' }}>
+          {name.toUpperCase()}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          {/* Ghost tile for right-side row goes LEFT (closest to the vs. divider) */}
+          {ghostEntry && !isMyRow && (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, opacity: 0.55 }}>
+                <button
+                  onClick={() => setExpandedDimKey(prev => prev === ghostEntry.dimKey ? null : ghostEntry.dimKey)}
+                  style={{
+                    width: 72, height: 72, borderRadius: 10, cursor: 'pointer',
+                    border: '2px solid var(--ink)', background: 'var(--ink)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                    transition: 'all 120ms',
+                  }}
+                >
+                  <span style={{ fontFamily: 'var(--serif-display)', fontSize: 30, fontWeight: 600, lineHeight: 1, color: 'var(--paper)' }}>
+                    {view === 'dislikes' ? ghostEntry.oppLetter : ghostEntry.letter}
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 6, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--paper-edge)', opacity: 0.8 }}>
+                    {view === 'dislikes' ? ghostEntry.oppLabel : ghostEntry.label}
+                  </span>
+                </button>
+                <div style={{ width: 52, height: 2, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ width: `${view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}%`, height: '100%', background: 'var(--ink)', borderRadius: 999, opacity: 0.4 }} />
+                </div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
+                  {view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}
+                </span>
+              </div>
+              <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--paper-edge)', margin: '0 4px' }} />
+            </>
+          )}
+
+          {displayEntries.map(e => {
+            const isSelected = e.dimKey === expandedDimKey
+            // In DISLIKES mode, show the opposite pole's letter/label
+            const tileLetter = view === 'dislikes' ? e.oppLetter : e.letter
+            const tileLabel  = view === 'dislikes' ? e.oppLabel  : e.label
+            return (
+              <div key={e.dimKey} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+                <button
+                  onClick={() => setExpandedDimKey(prev => prev === e.dimKey ? null : e.dimKey)}
+                  style={{
+                    width: 72, height: 72, borderRadius: 10, cursor: 'pointer',
+                    border: `2px solid ${isSelected ? 'var(--ink)' : 'var(--paper-edge)'}`,
+                    background: isSelected ? 'var(--ink)' : 'transparent',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                    transition: 'all 120ms',
+                  }}
+                >
+                  <span style={{ fontFamily: 'var(--serif-display)', fontSize: 30, fontWeight: 600, lineHeight: 1, color: isSelected ? 'var(--paper)' : color }}>
+                    {tileLetter}
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 6, letterSpacing: '0.06em', textTransform: 'uppercase', color: isSelected ? 'var(--paper-edge)' : color, opacity: 0.8 }}>
+                    {tileLabel}
+                  </span>
+                </button>
+                <div style={{ width: 52, height: 2, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ width: `${view === 'dislikes' ? e.oppositeScore : e.gap}%`, height: '100%', background: isSelected ? 'var(--ink)' : color, borderRadius: 999, transition: 'all 120ms', opacity: isSelected ? 1 : 0.5 }} />
+                </div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
+                  {view === 'dislikes' ? e.oppositeScore : e.gap}
+                </span>
+              </div>
+            )
+          })}
+
+          {/* Ghost tile for left-side row goes RIGHT (closest to the vs. divider) */}
+          {ghostEntry && isMyRow && (
+            <>
+              <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--paper-edge)', margin: '0 4px' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, opacity: 0.55 }}>
+                <button
+                  onClick={() => setExpandedDimKey(prev => prev === ghostEntry.dimKey ? null : ghostEntry.dimKey)}
+                  style={{
+                    width: 72, height: 72, borderRadius: 10, cursor: 'pointer',
+                    border: '2px solid var(--ink)', background: 'var(--ink)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                    transition: 'all 120ms',
+                  }}
+                >
+                  <span style={{ fontFamily: 'var(--serif-display)', fontSize: 30, fontWeight: 600, lineHeight: 1, color: 'var(--paper)' }}>
+                    {view === 'dislikes' ? ghostEntry.oppLetter : ghostEntry.letter}
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 6, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--paper-edge)', opacity: 0.8 }}>
+                    {view === 'dislikes' ? ghostEntry.oppLabel : ghostEntry.label}
+                  </span>
+                </button>
+                <div style={{ width: 52, height: 2, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ width: `${view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}%`, height: '100%', background: 'var(--ink)', borderRadius: 999, opacity: 0.4 }} />
+                </div>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
+                  {view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-      {films.length === 0 ? (
-        <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)', margin: 0 }}>
-          {emptyText}
-        </p>
-      ) : (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {films.map(({ film, myStars, theirStars }) => (
-            <PosterCard
-              key={film.film_id}
-              film={film}
-              myStars={myStars}
-              theirStars={theirStars}
-              myColor={myColor}
-              theirColor={theirColor}
-            />
+    )
+  }
+
+  return (
+    <div style={{ marginBottom: 48 }}>
+      {/* Likes / Dislikes pill toggle */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
+        <div style={{ display: 'flex', gap: 0, background: 'var(--paper-2)', borderRadius: 999, padding: 2 }}>
+          {(['likes', 'dislikes'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => { setView(v); setExpandedDimKey(null) }}
+              style={{
+                padding: '6px 20px', borderRadius: 999, cursor: 'pointer', border: 'none',
+                background: view === v ? 'var(--ink)' : 'transparent',
+                color: view === v ? 'var(--paper)' : 'var(--ink-3)',
+                fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.1em',
+                textTransform: 'uppercase', transition: 'all 120ms',
+              }}
+            >
+              {v}
+            </button>
           ))}
+        </div>
+      </div>
+
+      {/* Both rows centered */}
+      <div style={{ display: 'flex', gap: 40, justifyContent: 'center', alignItems: 'flex-start', marginBottom: 36 }}>
+        <CodeRow displayEntries={myDisplayEntries} allEntries={myAllEntries} name={myFirst} color="var(--s-ink)" isMyRow={true} />
+        <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 16, color: 'var(--ink-4)', paddingTop: 28 }}>vs.</div>
+        <CodeRow displayEntries={theirDisplayEntries} allEntries={theirAllEntries} name={theirFirst} color="var(--p-ink)" isMyRow={false} />
+      </div>
+
+      <div style={{ borderTop: '0.5px solid var(--paper-edge)', marginBottom: 36 }} />
+
+      {/* Expanded detail or prose */}
+      {expandedDimKey && (myEntry || theirEntry) ? (
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', textAlign: 'center', marginBottom: 28 }}>
+            {myEntry ? DIM_AXIS_LABEL[myEntry.dimKey] ?? myEntry.dimKey : theirEntry ? DIM_AXIS_LABEL[theirEntry.dimKey] ?? theirEntry.dimKey : ''}
+          </div>
+          {(() => {
+            // In DISLIKES mode, the "displayed pole" is the opposite of Steven's dominant for this dim.
+            // e.g. if Steven's dominant = 'left' (Intimate), the displayed pole = 'right' (Epic).
+            // We use this to determine whether Paola leans TOWARD or AWAY FROM the displayed pole.
+            const displayedOppPole: 'left' | 'right' | null =
+              view === 'dislikes' && myEntry
+                ? (myEntry.pole === 'left' ? 'right' : 'left')
+                : null
+
+            // Header prefix — encodes signal strength into lean intensity
+            function leanPrefix(tone: 'strong' | 'moderate' | 'weak'): string {
+              if (tone === 'strong') return 'LEANS HEAVILY'
+              if (tone === 'moderate') return 'LEANS'
+              return 'LEANS SLIGHTLY'
+            }
+
+            const sides = [
+              { entry: myEntry,    first: myFirst,    color: 'var(--s-ink)', tone: myTone,
+                // My side in DISLIKES: always showing my avoided (opposite) pole
+                leanToward: view === 'dislikes' ? false : true },
+              { entry: theirEntry, first: theirFirst, color: 'var(--p-ink)', tone: theirTone,
+                // Their side: do they lean TOWARD or AWAY FROM the displayed pole?
+                leanToward: view === 'dislikes' && displayedOppPole
+                  ? (theirEntry?.pole === displayedOppPole)  // true = they like the pole Steven avoids
+                  : true },
+            ]
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48 }}>
+                {sides.map(({ entry, first, color, tone, leanToward }) => {
+                  const isDislikes = view === 'dislikes'
+
+                  // The displayed pole's label — always the same regardless of lean direction
+                  // (leanToward=true: entry.label = their dominant = the displayed pole)
+                  // (leanToward=false: entry.oppLabel = their opposite = the displayed pole)
+                  const poleLabel = isDislikes && entry
+                    ? (leanToward ? entry.label : entry.oppLabel)
+                    : entry?.label ?? ''
+
+                  const headerSuffix = poleLabel
+                    ? ` — ${leanPrefix(tone)} ${poleLabel.toUpperCase()}`
+                    : ''
+
+                  // Prose: based on lean direction and signal strength
+                  const prose = isDislikes && entry
+                    ? leanToward
+                      // They lean TOWARD the displayed pole — show positive/affirmative
+                      ? tone === 'strong' ? entry.description
+                        : tone === 'moderate' ? `${first} leans toward this end — it shows up in their library, though not as a defining trait.`
+                        : `${first}'s ratings don't strongly separate these poles.`
+                      // They lean AWAY FROM the displayed pole — show negative
+                      : tone === 'strong' ? entry.oppNegativeDescription
+                        : tone === 'moderate' ? `${first} shows some lean away from this end, though it isn't a defining aversion.`
+                        : `${first}'s ratings don't clearly separate these poles.`
+                    // LIKES mode: standard tone-based prose
+                    : entry ? descriptionFor(entry, tone, first, false) : ''
+
+                  // Films: toward = highest-rated from their dominant quartile; away = lowest from opp quartile
+                  const allFilmsForDim = isDislikes && entry
+                    ? leanToward ? entry.sampleFilms : entry.oppSampleFilms
+                    : entry ? entry.sampleFilms : []
+
+                  // Display: show at most 4 films (sorted by relevance)
+                  const displayFilms = isDislikes && entry
+                    ? leanToward
+                      ? [...entry.sampleFilms].sort((a, b) => b.stars - a.stars).slice(0, 4)
+                      : [...entry.oppSampleFilms].sort((a, b) => a.stars - b.stars).slice(0, 4)
+                    : entry
+                      ? [...entry.sampleFilms].sort((a, b) => b.stars - a.stars).slice(0, 4)
+                      : []
+
+                  // Avg computed from ALL films in that quartile, not just the 4 shown
+                  const avgStars = allFilmsForDim.length > 0
+                    ? (allFilmsForDim.reduce((s, f) => s + f.stars, 0) / allFilmsForDim.length).toFixed(2)
+                    : '—'
+                  const filmCount = isDislikes && entry
+                    ? (leanToward ? entry.filmCount : entry.oppFilmCount)
+                    : entry?.filmCount
+                  const filmLabel = isDislikes
+                    ? (leanToward ? 'HIGHEST RATED' : 'LOWEST RATED')
+                    : 'HIGHEST RATED'
+
+                  return (
+                    <div key={first}>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color, letterSpacing: '0.1em', marginBottom: 6 }}>
+                        {first.toUpperCase()}{headerSuffix}
+                      </div>
+                      {entry ? (
+                        <>
+                          <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, lineHeight: 1.65, color: 'var(--ink-2)', margin: '0 0 18px', opacity: isDislikes ? 1 : tone === 'strong' ? 1 : tone === 'moderate' ? 0.82 : 0.65 }}>
+                            {prose}
+                          </p>
+                          <div style={{ display: 'flex', gap: 20, marginBottom: 18 }}>
+                            <div>
+                              <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, color, lineHeight: 1 }}>{avgStars}</div>
+                              <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 3 }}>AVG STARS</div>
+                            </div>
+                            <div>
+                              <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>{filmCount ?? '—'}</div>
+                              <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 3 }}>IN THIS QUARTILE</div>
+                            </div>
+                          </div>
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.08em', marginBottom: 10 }}>{filmLabel}</div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {displayFilms.map(f => (
+                              <div key={f.film_id} style={{ width: 72, textAlign: 'center' }}>
+                                <div style={{ width: 72, height: 108, borderRadius: 4, overflow: 'hidden', background: 'var(--paper-edge)', position: 'relative', marginBottom: 5 }}>
+                                  {f.poster_path && <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} />}
+                                </div>
+                                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color }}>{f.stars.toFixed(1)}★</div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', margin: 0, lineHeight: 1.6 }}>
+                          not a strong signal in {first}'s library yet.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+          <div style={{ textAlign: 'center', marginTop: 28 }}>
+            <button
+              onClick={() => setExpandedDimKey(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)', letterSpacing: '0.06em', textDecoration: 'underline', textUnderlineOffset: 3 }}
+            >
+              ← back to overview
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ maxWidth: 600, margin: '0 auto', textAlign: 'center' }}>
+          {view === 'likes' ? (
+            <p style={{ fontFamily: 'var(--serif-display)', fontStyle: 'italic', fontSize: 18, lineHeight: 1.65, color: 'var(--ink)', margin: '0 0 20px' }}>
+              {renderSegments(compatProse(likesCompat, myName, theirName))}
+            </p>
+          ) : (
+            <p style={{ fontFamily: 'var(--serif-display)', fontStyle: 'italic', fontSize: 18, lineHeight: 1.65, color: 'var(--ink)', margin: '0 0 20px' }}>
+              {renderSegments(buildSegments(
+                'The flip side of each of your strongest pulls. Where ',
+                { name: myFirst, color: 'var(--s-ink)' },
+                ` leans ${myCode.entries.map(e => e.label).join(', ')}, the opposite ends reveal what doesn't connect — and the same goes for `,
+                { name: theirFirst, color: 'var(--p-ink)' },
+                `. Tap any letter to see what each of you pulls away from.`,
+              ))}
+            </p>
+          )}
+          <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', margin: 0 }}>
+            tap any letter to see what that dimension looks like for both of you.
+          </p>
         </div>
       )}
     </div>
   )
 }
 
-// ── Genre tab helpers ─────────────────────────────────────────────────────────
+// ── Genre Code Blend ──────────────────────────────────────────────────────────
 
-function findGenreConverge(
-  myGenres: GenreEntry[], theirGenres: GenreEntry[],
-  myFilms: LibraryFilm[], theirFilms: LibraryFilm[],
-): { film: LibraryFilm; myStars: number | null; theirStars: number | null }[] {
-  const myHighGenres = new Set(myGenres.filter(g => (g.avgRating ?? 0) >= 3.8).map(g => g.label))
-  const thHighGenres = new Set(theirGenres.filter(g => (g.avgRating ?? 0) >= 3.8).map(g => g.label))
-  const sharedGenres = [...myHighGenres].filter(g => thHighGenres.has(g))
-  if (sharedGenres.length === 0) return []
+function GenreCodeBlend({
+  myGenres, theirGenres, myLibraryFilms, theirLibraryFilms, myName, theirName,
+  myDetailGenres, theirDetailGenres,
+}: {
+  myGenres: SimpleGenreEntry[]
+  theirGenres: SimpleGenreEntry[]
+  myLibraryFilms: LibraryFilm[]
+  theirLibraryFilms: LibraryFilm[]
+  myName: string
+  theirName: string
+  myDetailGenres?: GenreEntry[]
+  theirDetailGenres?: GenreEntry[]
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [view, setView] = useState<'likes' | 'dislikes'>('likes')
+  const myFirst    = myName.split(' ')[0]
+  const theirFirst = theirName.split(' ')[0]
 
-  const theirMap = new Map(theirFilms.map(f => [f.film_id, f]))
-  return myFilms
-    .filter(f => f.genres.some(g => sharedGenres.includes(g)) && theirMap.has(f.film_id))
-    .sort((a, b) => ((b.my_stars ?? 0) + (theirMap.get(b.film_id)?.my_stars ?? 0)) -
-                    ((a.my_stars ?? 0) + (theirMap.get(a.film_id)?.my_stars ?? 0)))
-    .slice(0, 6)
-    .map(f => ({ film: f, myStars: f.my_stars, theirStars: theirMap.get(f.film_id)?.my_stars ?? null }))
-}
+  const myFiltered    = [...myGenres].filter(g => g.count >= 2 && g.avgRating != null)
+  const theirFiltered = [...theirGenres].filter(g => g.count >= 2 && g.avgRating != null)
 
-function findGenreDiverge(
-  myGenres: GenreEntry[], theirGenres: GenreEntry[],
-  myFilms: LibraryFilm[], theirFilms: LibraryFilm[],
-): { film: LibraryFilm; myStars: number | null; theirStars: number | null }[] {
-  const theirMap = new Map(theirFilms.map(f => [f.film_id, f]))
-  const myHigh  = new Set(myGenres.filter(g => (g.avgRating ?? 0) >= 4).map(g => g.label))
-  const thHigh  = new Set(theirGenres.filter(g => (g.avgRating ?? 0) >= 4).map(g => g.label))
+  const myTop4     = myFiltered.sort((a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0)).slice(0, 4)
+  const theirTop4  = theirFiltered.sort((a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0)).slice(0, 4)
+  const myBottom4  = [...myFiltered].sort((a, b) => (a.avgRating ?? 0) - (b.avgRating ?? 0)).slice(0, 4)
+  const theirBottom4 = [...theirFiltered].sort((a, b) => (a.avgRating ?? 0) - (b.avgRating ?? 0)).slice(0, 4)
 
-  // Genres one loves, other doesn't prioritize
-  const onlyMine  = [...myHigh].filter(g => !thHigh.has(g))
-  const onlyTheirs = [...thHigh].filter(g => !myHigh.has(g))
+  const myDisplay    = view === 'likes' ? myTop4    : myBottom4
+  const theirDisplay = view === 'likes' ? theirTop4 : theirBottom4
+  const mySet     = new Set(myDisplay.map(g => g.label))
+  const theirSet  = new Set(theirDisplay.map(g => g.label))
 
-  const results: { film: LibraryFilm; myStars: number | null; theirStars: number | null }[] = []
+  const myExpandedEntry    = expanded ? myGenres.find(g => g.label === expanded) ?? null : null
+  const theirExpandedEntry = expanded ? theirGenres.find(g => g.label === expanded) ?? null : null
+  // For dislikes view, show lowest-rated films in that genre; for likes, show highest-rated
+  const myFilms    = expanded ? [...myLibraryFilms].filter(f => f.genres?.some(g => g.toLowerCase().includes(expanded.toLowerCase()))).sort((a, b) => view === 'dislikes' ? (a.my_stars ?? 0) - (b.my_stars ?? 0) : (b.my_stars ?? 0) - (a.my_stars ?? 0)).slice(0, 4) : []
+  const theirFilms = expanded ? [...theirLibraryFilms].filter(f => f.genres?.some(g => g.toLowerCase().includes(expanded.toLowerCase()))).sort((a, b) => view === 'dislikes' ? (a.my_stars ?? 0) - (b.my_stars ?? 0) : (b.my_stars ?? 0) - (a.my_stars ?? 0)).slice(0, 4) : []
 
-  // My divergent picks — highly rated by me, in genre they don't prioritize
-  const myPicks = myFilms
-    .filter(f => f.genres.some(g => onlyMine.includes(g)) && (f.my_stars ?? 0) >= 4)
-    .sort((a, b) => (b.my_stars ?? 0) - (a.my_stars ?? 0))
-    .slice(0, 3)
-  for (const f of myPicks) {
-    results.push({ film: f, myStars: f.my_stars, theirStars: theirMap.get(f.film_id)?.my_stars ?? null })
+  // Subgenres: nuanced AI genres that contain the expanded genre name
+  // For dislikes view, sort subgenres by lowest rating; for likes, by highest
+  const mySubgenres    = expanded && myDetailGenres
+    ? myDetailGenres.filter(g => g.label.toLowerCase().includes(expanded.toLowerCase()) && g.label !== expanded && (g.count ?? 0) >= 1).sort((a, b) => view === 'dislikes' ? (a.avgRating ?? 0) - (b.avgRating ?? 0) : (b.avgRating ?? 0) - (a.avgRating ?? 0)).slice(0, 6)
+    : []
+  const theirSubgenres = expanded && theirDetailGenres
+    ? theirDetailGenres.filter(g => g.label.toLowerCase().includes(expanded.toLowerCase()) && g.label !== expanded && (g.count ?? 0) >= 1).sort((a, b) => view === 'dislikes' ? (a.avgRating ?? 0) - (b.avgRating ?? 0) : (b.avgRating ?? 0) - (a.avgRating ?? 0)).slice(0, 6)
+    : []
+
+  function GenreTile({ genre, isShared, personColor }: { genre: SimpleGenreEntry; isShared: boolean; personColor: string }) {
+    const isSelected = expanded === genre.label
+    return (
+      <button
+        onClick={() => setExpanded(prev => prev === genre.label ? null : genre.label)}
+        style={{
+          display: 'block', width: '100%', padding: '12px 16px', borderRadius: 8, textAlign: 'left', cursor: 'pointer',
+          border: `1.5px solid ${isSelected ? 'var(--ink)' : isShared ? 'var(--forest)' : personColor}`,
+          background: isSelected ? 'var(--ink)' : isShared ? 'rgba(74,107,62,0.06)' : 'transparent',
+          transition: 'all 120ms',
+        }}
+      >
+        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500, lineHeight: 1.2, color: isSelected ? 'var(--paper)' : isShared ? 'var(--forest)' : personColor }}>
+          {genre.label}
+        </div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: isSelected ? 'var(--paper-edge)' : 'var(--ink-4)', marginTop: 4 }}>
+          {genre.avgRating?.toFixed(1)}★ · {genre.count} films
+        </div>
+      </button>
+    )
   }
 
-  // Their divergent picks — highly rated by them, in genre I don't prioritize
-  const theirPicks = theirFilms
-    .filter(f => f.genres.some(g => onlyTheirs.includes(g)) && (f.my_stars ?? 0) >= 4)
-    .sort((a, b) => (b.my_stars ?? 0) - (a.my_stars ?? 0))
-    .slice(0, 3)
-  const myMap = new Map(myFilms.map(f => [f.film_id, f]))
-  for (const f of theirPicks) {
-    results.push({ film: f, myStars: myMap.get(f.film_id)?.my_stars ?? null, theirStars: f.my_stars })
-  }
+  return (
+    <div style={{ marginBottom: 48 }}>
+      {/* Likes / Dislikes pill toggle */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 28 }}>
+        <div style={{ display: 'flex', gap: 0, background: 'var(--paper-2)', borderRadius: 999, padding: 2 }}>
+          {(['likes', 'dislikes'] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => { setView(v); setExpanded(null) }}
+              style={{
+                padding: '6px 20px', borderRadius: 999, cursor: 'pointer', border: 'none',
+                background: view === v ? 'var(--ink)' : 'transparent',
+                color: view === v ? 'var(--paper)' : 'var(--ink-3)',
+                fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.1em',
+                textTransform: 'uppercase', transition: 'all 120ms',
+              }}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      </div>
 
-  return results.slice(0, 6)
+      {/* Two columns centered */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 40, maxWidth: 680, margin: '0 auto 28px' }}>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--s-ink)', letterSpacing: '0.1em', marginBottom: 12 }}>
+            {myFirst.toUpperCase()}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {myDisplay.length === 0
+              ? <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', margin: 0, gridColumn: '1 / -1' }}>not enough rated films yet</p>
+              : myDisplay.map(g => <GenreTile key={g.label} genre={g} isShared={theirSet.has(g.label)} personColor="var(--s-ink)" />)
+            }
+          </div>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--p-ink)', letterSpacing: '0.1em', marginBottom: 12 }}>
+            {theirFirst.toUpperCase()}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {theirDisplay.length === 0
+              ? <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', margin: 0, gridColumn: '1 / -1' }}>not enough rated films yet</p>
+              : theirDisplay.map(g => <GenreTile key={g.label} genre={g} isShared={mySet.has(g.label)} personColor="var(--p-ink)" />)
+            }
+          </div>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginBottom: 32 }}>
+        {[
+          { dot: '●', color: 'var(--forest)', label: 'in both top 4' },
+          { dot: '○', color: 'var(--ink-4)',   label: 'unique to one' },
+        ].map(({ dot, color, label }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color }}>{dot}</span>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div style={{ borderTop: '0.5px solid var(--paper-edge)', paddingTop: 36, maxWidth: 680, margin: '0 auto' }}>
+          <div style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 500, textAlign: 'center', marginBottom: 32 }}>
+            {expanded}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48 }}>
+            {[
+              { first: myFirst, color: 'var(--s-ink)', genreEntry: myExpandedEntry, films: myFilms, subgenres: mySubgenres },
+              { first: theirFirst, color: 'var(--p-ink)', genreEntry: theirExpandedEntry, films: theirFilms, subgenres: theirSubgenres },
+            ].map(({ first, color, genreEntry, films, subgenres }) => (
+              <div key={first}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color, letterSpacing: '0.1em', marginBottom: 16 }}>
+                  {first.toUpperCase()}
+                </div>
+                {genreEntry ? (
+                  <>
+                    <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+                      <div>
+                        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 26, fontWeight: 600, color, lineHeight: 1 }}>
+                          {genreEntry.avgRating?.toFixed(1)}
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 3 }}>AVG STARS</div>
+                      </div>
+                      <div>
+                        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 26, fontWeight: 600, color: 'var(--ink)', lineHeight: 1 }}>
+                          {genreEntry.count}
+                        </div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 3 }}>FILMS SEEN</div>
+                      </div>
+                    </div>
+                    {films.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+                        {films.map(f => (
+                          <div key={f.film_id} style={{ width: 68, textAlign: 'center' }}>
+                            <div style={{ width: 68, height: 102, borderRadius: 4, overflow: 'hidden', background: 'var(--paper-edge)', position: 'relative', marginBottom: 5 }}>
+                              {f.poster_path && <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} />}
+                            </div>
+                            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color }}>{(f.my_stars ?? 0).toFixed(1)}★</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {subgenres.length > 0 && (
+                      <div>
+                        <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.1em', marginBottom: 8 }}>SUBGENRES</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {subgenres.map(sg => (
+                            <div key={sg.label} style={{
+                              padding: '4px 10px', borderRadius: 999,
+                              border: '0.5px solid var(--paper-edge)',
+                              background: 'var(--paper-2)',
+                            }}>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-3)' }}>{sg.label}</span>
+                              {sg.avgRating != null && (
+                                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', marginLeft: 5 }}>{sg.avgRating.toFixed(1)}★</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-4)', margin: 0, lineHeight: 1.6 }}>
+                    hasn't rated many {expanded} films yet.
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: 28 }}>
+            <button
+              onClick={() => setExpanded(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)', letterSpacing: '0.06em', textDecoration: 'underline', textUnderlineOffset: 3 }}
+            >
+              ← back
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -404,12 +802,6 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
   const [theirData, setTheirData] = useState<TasteData | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<TabId>('taste')
-  const [selectedDim, setSelectedDim] = useState<DimKey | null>(null)
-
-  // Genre find-movies state
-  const [findingMovies, setFindingMovies] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const [suggestedFilms, setSuggestedFilms] = useState<LibraryFilm[] | null>(null)
 
   useEffect(() => {
     params.then(async ({ id }) => {
@@ -433,75 +825,6 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
   const gScore = useMemo(() =>
     myData && theirData ? genreScore(myData.genres, theirData.genres) : null,
   [myData, theirData])
-
-  // Taste tab — converge / diverge from both-watched films
-  const tasteConverge = useMemo(() => {
-    if (!myData || !theirData) return []
-    const theirMap = new Map(theirData.libraryFilms.map(f => [f.film_id, f]))
-    return myData.libraryFilms
-      .filter(f => (f.my_stars ?? 0) >= 3.5 && (theirMap.get(f.film_id)?.my_stars ?? 0) >= 3.5 &&
-        Math.abs((f.my_stars ?? 0) - (theirMap.get(f.film_id)?.my_stars ?? 0)) < 1)
-      .sort((a, b) => ((b.my_stars ?? 0) + (theirMap.get(b.film_id)?.my_stars ?? 0)) -
-                      ((a.my_stars ?? 0) + (theirMap.get(a.film_id)?.my_stars ?? 0)))
-      .slice(0, 6)
-      .map(f => ({ film: f, myStars: f.my_stars, theirStars: theirMap.get(f.film_id)?.my_stars ?? null }))
-  }, [myData, theirData])
-
-  const tasteDiverge = useMemo(() => {
-    if (!myData || !theirData) return []
-    const theirMap = new Map(theirData.libraryFilms.map(f => [f.film_id, f]))
-    return myData.libraryFilms
-      .filter(f => f.my_stars != null && theirMap.has(f.film_id) &&
-        Math.abs((f.my_stars ?? 0) - (theirMap.get(f.film_id)?.my_stars ?? 0)) >= 1.5)
-      .sort((a, b) =>
-        Math.abs((b.my_stars ?? 0) - (theirMap.get(b.film_id)?.my_stars ?? 0)) -
-        Math.abs((a.my_stars ?? 0) - (theirMap.get(a.film_id)?.my_stars ?? 0)))
-      .slice(0, 6)
-      .map(f => ({ film: f, myStars: f.my_stars, theirStars: theirMap.get(f.film_id)?.my_stars ?? null }))
-  }, [myData, theirData])
-
-  // Genre tab
-  const genreConverge = useMemo(() => {
-    if (!myData || !theirData) return []
-    return findGenreConverge(myData.genres, theirData.genres, myData.libraryFilms, theirData.libraryFilms)
-  }, [myData, theirData])
-
-  const genreDiverge = useMemo(() => {
-    if (!myData || !theirData) return []
-    return findGenreDiverge(myData.genres, theirData.genres, myData.libraryFilms, theirData.libraryFilms)
-  }, [myData, theirData])
-
-  // Active prose
-  const activeProseSegs = useMemo(() => {
-    if (!myData || !theirData) return []
-    const dim = DIMS.find(d => d.key === selectedDim)
-    if (dim) return dimProseSegments(dim, myName, friendName, myData.dimensions, theirData.dimensions)
-    return overallProseSegments(myName, friendName, myData.dimensions, theirData.dimensions)
-  }, [selectedDim, myData, theirData, myName, friendName])
-
-  // Find movies we both like (algorithmic — films in DB neither has seen, scored against avg taste vector)
-  const handleFindMovies = async () => {
-    if (!myData || !theirData) return
-    setFindingMovies(true)
-    setConfirming(false)
-    try {
-      const watchedSet = new Set([
-        ...myData.libraryFilms.map(f => f.film_id),
-        ...theirData.libraryFilms.map(f => f.film_id),
-      ])
-      const res = await fetch(`/api/friends/${friendId}/find-together`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ excludeFilmIds: [...watchedSet] }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setSuggestedFilms(data.films ?? [])
-      }
-    } finally {
-      setFindingMovies(false)
-    }
-  }
 
   const myFirst    = myName.split(' ')[0]
   const theirFirst = friendName.split(' ')[0]
@@ -533,7 +856,7 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
             </div>
 
             {/* ── Tabs ─────────────────────────────────────────────── */}
-            <div style={{ borderBottom: '0.5px solid var(--paper-edge)', display: 'flex', gap: 0, marginBottom: 40 }}>
+            <div style={{ borderBottom: '0.5px solid var(--paper-edge)', display: 'flex', gap: 0, marginBottom: 40, justifyContent: 'center' }}>
               {([
                 { id: 'taste' as TabId, label: 'Taste Alignment', score: tScore },
                 { id: 'genre' as TabId, label: 'Genre Alignment',  score: gScore },
@@ -547,16 +870,17 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
                     fontFamily: 'var(--serif-body)', fontSize: 14,
                     fontWeight: tab === t.id ? 600 : 400,
                     color: tab === t.id ? 'var(--ink)' : 'var(--ink-3)',
-                    display: 'inline-flex', alignItems: 'baseline', gap: 10,
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
                   }}
                 >
                   {t.label}
                   {t.score != null && (
                     <span style={{
                       fontFamily: 'var(--mono)', fontSize: 10,
-                      color: tab === t.id ? 'var(--ink-2)' : 'var(--ink-4)',
+                      color: t.score >= 72 ? 'var(--forest)' : t.score >= 52 ? 'var(--sun)' : 'var(--ink-4)',
+                      letterSpacing: '0.04em',
                     }}>
-                      {t.score}
+                      {t.score} / 100
                     </span>
                   )}
                 </button>
@@ -566,299 +890,38 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
             {/* ══ TASTE ALIGNMENT TAB ══════════════════════════════════ */}
             {tab === 'taste' && (
               <>
-                {tScore != null && (
-                  <div style={{ marginBottom: 32 }}>
-                    <ScoreDisplay score={tScore} label="TASTE ALIGNMENT" />
-                  </div>
+                {tScore != null && <ScoreBar score={tScore} label="Taste Alignment" />}
+                {myData.tasteCode && theirData.tasteCode ? (
+                  <TasteCodeBlend
+                    myCode={myData.tasteCode}
+                    theirCode={theirData.tasteCode}
+                    myName={myName}
+                    theirName={friendName}
+                  />
+                ) : (
+                  <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>
+                    taste profiles are still being built.
+                  </p>
                 )}
-
-                {/* Radar + prose */}
-                <div style={{ display: 'flex', gap: 48, alignItems: 'flex-start', marginBottom: 56, flexWrap: 'wrap' }}>
-                  <div style={{ flex: '0 0 auto' }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)', letterSpacing: '0.08em', marginBottom: 10 }}>
-                      CLICK A LABEL TO FOCUS
-                    </div>
-                    <BlendRadar
-                      myDimensions={myData.dimensions}
-                      theirDimensions={theirData.dimensions}
-                      myName={myName}
-                      theirName={friendName}
-                      selectedDim={selectedDim}
-                      onSelectDim={setSelectedDim}
-                    />
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: 260, paddingTop: 28 }}>
-                    {selectedDim ? (() => {
-                      const dim = DIMS.find(d => d.key === selectedDim)!
-                      return (
-                        <>
-                          <div style={{
-                            fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
-                            letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4,
-                          }}>
-                            {dim.axis}
-                          </div>
-                          <DimBar
-                            neg={dim.neg}
-                            pos={dim.pos}
-                            myVal={myData.dimensions[selectedDim]}
-                            myName={myFirst}
-                            myColor="var(--s-ink)"
-                            theirVal={theirData.dimensions[selectedDim]}
-                            theirName={theirFirst}
-                            theirColor="var(--p-ink)"
-                          />
-                        </>
-                      )
-                    })() : null}
-                    <p style={{
-                      fontFamily: 'var(--serif-display)',
-                      fontSize: 18,
-                      lineHeight: 1.65,
-                      color: 'var(--ink)',
-                      margin: 0,
-                      fontStyle: 'italic',
-                      fontWeight: 400,
-                    }}>
-                      {renderSegments(activeProseSegs)}
-                    </p>
-                    {selectedDim && (
-                      <button
-                        onClick={() => setSelectedDim(null)}
-                        style={{
-                          marginTop: 14, background: 'none', border: 'none', cursor: 'pointer',
-                          fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
-                          letterSpacing: '0.06em', padding: 0, textDecoration: 'underline',
-                          textUnderlineOffset: 3,
-                        }}
-                      >
-                        ← back to overview
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Converge / Diverge */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48 }}>
-                  <FilmRow
-                    title="★ WHERE YOU CONVERGE"
-                    films={tasteConverge}
-                    myColor="var(--s-ink)"
-                    theirColor="var(--p-ink)"
-                    emptyText="No films you've both rated highly yet."
-                  />
-                  <FilmRow
-                    title="★ WHERE YOU DIVERGE"
-                    films={tasteDiverge}
-                    myColor="var(--s-ink)"
-                    theirColor="var(--p-ink)"
-                    emptyText="No strong disagreements yet."
-                  />
-                </div>
               </>
             )}
 
             {/* ══ GENRE ALIGNMENT TAB ══════════════════════════════════ */}
-            {tab === 'genre' && (() => {
-              // Compute genre lists for display
-              const myMap  = new Map(myData.genres.map(g => [g.label, g]))
-              const thMap  = new Map(theirData.genres.map(g => [g.label, g]))
-              const allLabels = new Set([...myMap.keys(), ...thMap.keys()])
-
-              const sharedGenres: { label: string; myAvg: number; thAvg: number }[] = []
-              const myOnlyGenres: { label: string; myAvg: number }[] = []
-              const thOnlyGenres: { label: string; thAvg: number }[] = []
-
-              for (const label of allLabels) {
-                const my = myMap.get(label)
-                const th = thMap.get(label)
-                const myAvg = my?.avgRating ?? 0
-                const thAvg = th?.avgRating ?? 0
-                if (my && th) {
-                  sharedGenres.push({ label, myAvg, thAvg })
-                } else if (my && myAvg >= 3.8) {
-                  myOnlyGenres.push({ label, myAvg })
-                } else if (th && thAvg >= 3.8) {
-                  thOnlyGenres.push({ label, thAvg })
-                }
-              }
-              sharedGenres.sort((a, b) => (b.myAvg + b.thAvg) - (a.myAvg + a.thAvg))
-              myOnlyGenres.sort((a, b) => b.myAvg - a.myAvg)
-              thOnlyGenres.sort((a, b) => b.thAvg - a.thAvg)
-
-              return (
-                <>
-                  {gScore != null && (
-                    <div style={{ marginBottom: 40 }}>
-                      <ScoreDisplay score={gScore} label="GENRE ALIGNMENT" />
-                    </div>
-                  )}
-
-                  {/* ── Genre map ─────────────────────────────────────── */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, marginBottom: 52 }}>
-
-                    {/* Shared / converge */}
-                    <div>
-                      <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 16 }}>★ SHARED TASTES</div>
-                      {sharedGenres.length === 0 ? (
-                        <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
-                          No genres you've both explored yet.
-                        </p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                          {sharedGenres.slice(0, 8).map(g => (
-                            <div key={g.label} style={{
-                              display: 'grid', gridTemplateColumns: '1fr auto auto',
-                              gap: 12, alignItems: 'center',
-                              padding: '10px 0',
-                              borderBottom: '0.5px solid var(--paper-edge)',
-                            }}>
-                              <span style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500 }}>{g.label}</span>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--s-ink)', letterSpacing: '0.04em', minWidth: 36, textAlign: 'right' }}>
-                                {g.myAvg.toFixed(1)}★
-                              </span>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--p-ink)', letterSpacing: '0.04em', minWidth: 36, textAlign: 'right' }}>
-                                {g.thAvg.toFixed(1)}★
-                              </span>
-                            </div>
-                          ))}
-                          <div style={{ marginTop: 10, display: 'flex', gap: 20 }}>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--s-ink)', letterSpacing: '0.04em' }}>{myFirst}</span>
-                            <span style={{ fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--p-ink)', letterSpacing: '0.04em' }}>{theirFirst}</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Divergent genres */}
-                    <div>
-                      <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 16 }}>★ DIFFERENT TERRITORY</div>
-                      {myOnlyGenres.length === 0 && thOnlyGenres.length === 0 ? (
-                        <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
-                          No strong genre divergence yet.
-                        </p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                          {myOnlyGenres.slice(0, 4).map(g => (
-                            <div key={`my-${g.label}`} style={{
-                              display: 'grid', gridTemplateColumns: '1fr auto',
-                              gap: 12, alignItems: 'center',
-                              padding: '10px 0',
-                              borderBottom: '0.5px solid var(--paper-edge)',
-                            }}>
-                              <div>
-                                <span style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500 }}>{g.label}</span>
-                                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--s-ink)', letterSpacing: '0.06em', marginLeft: 8 }}>{myFirst.toUpperCase()}</span>
-                              </div>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--s-ink)', letterSpacing: '0.04em' }}>
-                                {g.myAvg.toFixed(1)}★
-                              </span>
-                            </div>
-                          ))}
-                          {thOnlyGenres.slice(0, 4).map(g => (
-                            <div key={`th-${g.label}`} style={{
-                              display: 'grid', gridTemplateColumns: '1fr auto',
-                              gap: 12, alignItems: 'center',
-                              padding: '10px 0',
-                              borderBottom: '0.5px solid var(--paper-edge)',
-                            }}>
-                              <div>
-                                <span style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500 }}>{g.label}</span>
-                                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--p-ink)', letterSpacing: '0.06em', marginLeft: 8 }}>{theirFirst.toUpperCase()}</span>
-                              </div>
-                              <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--p-ink)', letterSpacing: '0.04em' }}>
-                                {g.thAvg.toFixed(1)}★
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* ── Representative films ───────────────────────────── */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, marginBottom: 64 }}>
-                    <FilmRow
-                      title="★ FILMS FROM SHARED GENRES"
-                      films={genreConverge}
-                      myColor="var(--s-ink)"
-                      theirColor="var(--p-ink)"
-                      emptyText="No films in shared genres you've both seen yet."
-                    />
-                    <FilmRow
-                      title="★ FROM YOUR DIFFERENT WORLDS"
-                      films={genreDiverge}
-                      myColor="var(--s-ink)"
-                      theirColor="var(--p-ink)"
-                      emptyText="No divergent-genre picks yet."
-                    />
-                  </div>
-
-                  {/* ── Find movies CTA ────────────────────────────────── */}
-                  <div style={{
-                    borderTop: '0.5px solid var(--paper-edge)', paddingTop: 40,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-                  }}>
-                    {suggestedFilms ? (
-                      <>
-                        <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 4, textAlign: 'center' }}>
-                          ★ FILMS YOU SHOULD WATCH TOGETHER
-                        </div>
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                          {suggestedFilms.map(f => (
-                            <PosterCard
-                              key={f.film_id}
-                              film={f}
-                              myStars={null}
-                              theirStars={null}
-                              myColor="var(--s-ink)"
-                              theirColor="var(--p-ink)"
-                            />
-                          ))}
-                        </div>
-                        <button
-                          onClick={() => { setSuggestedFilms(null); setConfirming(false) }}
-                          style={{
-                            marginTop: 8, background: 'none', border: 'none', cursor: 'pointer',
-                            fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
-                            letterSpacing: '0.06em', padding: 0, textDecoration: 'underline',
-                            textUnderlineOffset: 3,
-                          }}
-                        >
-                          find new suggestions
-                        </button>
-                      </>
-                    ) : confirming ? (
-                      <div style={{ textAlign: 'center' }}>
-                        <p style={{
-                          fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 15,
-                          color: 'var(--ink-2)', margin: '0 0 18px', lineHeight: 1.6,
-                        }}>
-                          Find films neither{' '}
-                          <span style={{ fontWeight: 600, color: 'var(--s-ink)' }}>{myFirst}</span>
-                          {' '}nor{' '}
-                          <span style={{ fontWeight: 600, color: 'var(--p-ink)' }}>{theirFirst}</span>
-                          {' '}has logged yet?
-                        </p>
-                        <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                          <button onClick={handleFindMovies} className="btn" style={{ padding: '10px 22px', fontSize: 13, borderRadius: 999 }}>
-                            {findingMovies ? 'searching…' : 'generate →'}
-                          </button>
-                          <button onClick={() => setConfirming(false)} className="btn btn-soft" style={{ padding: '10px 18px', fontSize: 13, borderRadius: 999 }}>
-                            cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button onClick={() => setConfirming(true)} className="btn" style={{ padding: '13px 28px', fontSize: 14, borderRadius: 999 }}>
-                        find movies we both like →
-                      </button>
-                    )}
-                  </div>
-                </>
-              )
-            })()}
+            {tab === 'genre' && (
+              <>
+                {gScore != null && <ScoreBar score={gScore} label="Genre Alignment" />}
+                <GenreCodeBlend
+                  myGenres={myData.simpleGenres}
+                  theirGenres={theirData.simpleGenres}
+                  myLibraryFilms={myData.libraryFilms}
+                  theirLibraryFilms={theirData.libraryFilms}
+                  myName={myName}
+                  theirName={friendName}
+                  myDetailGenres={myData.genres}
+                  theirDetailGenres={theirData.genres}
+                />
+              </>
+            )}
           </>
         ) : (
           <p style={{ fontStyle: 'italic', color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>could not load compatibility data.</p>

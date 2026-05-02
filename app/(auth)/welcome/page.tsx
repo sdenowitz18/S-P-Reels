@@ -2,7 +2,6 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 
 function WelcomeForm() {
   const router = useRouter()
@@ -21,25 +20,21 @@ function WelcomeForm() {
     setLoading(true)
     setErr('')
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.updateUser({
-      password: pw,
-      data: { name: name.trim() },
+    // Use the server-side admin route so Supabase doesn't send a confirmation email
+    const res = await fetch('/api/auth/complete-invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), password: pw }),
     })
+    const data = await res.json()
 
-    if (error) {
-      setErr(error.message)
+    if (!res.ok) {
+      setErr(data.error ?? 'something went wrong')
       setLoading(false)
       return
     }
 
-    await fetch('/api/auth/profile', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    })
-
-    router.push('/home')
+    router.push('/onboarding')
   }
 
   return (

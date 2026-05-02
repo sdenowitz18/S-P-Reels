@@ -3,9 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
-import { RadarChart, AXIS_INFO, AXES } from '@/components/radar-chart'
-import { DimBar } from '@/components/dim-bar'
-import { TasteDimensions } from '@/lib/prompts/taste-profile'
+import { TasteCode } from '@/lib/taste-code'
 
 interface GenreEntry { label: string; score: number; count: number; avgRating: number | null }
 interface SignatureFilm { film_id: string; title: string; poster_path: string | null; stars: number }
@@ -22,7 +20,6 @@ type CategoryType = 'director' | 'actor' | 'genre' | 'decade'
 interface SelectedCategory { type: CategoryType; label: string; avgRating: number | null; count: number }
 
 interface TasteProfile {
-  dimensions: TasteDimensions
   genres: GenreEntry[]
   signature: SignatureFilm[]
   topRated: TopFilm[]
@@ -34,6 +31,118 @@ interface TasteProfile {
   filmCount: number
   ratedCount: number
   friendName?: string
+  tasteCode?: TasteCode | null
+}
+
+const DIM_AXIS_LABEL: Record<string, string> = {
+  narrative_legibility:    'Legible ← → Opaque',
+  emotional_directness:    'Vivid ← → Subtle',
+  plot_vs_character:       'Plot ← → Character',
+  naturalistic_vs_stylized:'Naturalistic ← → Theatrical',
+  narrative_closure:       'Whole ← → Questioning',
+  intimate_vs_epic:        'Intimate ← → Epic',
+  accessible_vs_demanding: 'Familiar ← → Demanding',
+  psychological_safety:    'Hopeful ← → Unsettling',
+  moral_clarity:           'Just ← → Ambiguous',
+  behavioral_realism:      'Realistic ← → Archetypal',
+  sensory_vs_intellectual: 'Gut ← → Mind',
+  kinetic_vs_patient:      'Kinetic ← → Zen',
+}
+
+function TasteCodeDisplay({ code, prose, accentColor = 'var(--p-ink)', onViewFull }: {
+  code: TasteCode; prose?: string | null; accentColor?: string; onViewFull?: () => void
+}) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const activeEntry = expanded ? code.entries.find(e => e.letter === expanded) : null
+
+  return (
+    <div style={{ marginBottom: 56 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 48, rowGap: 16 }}>
+        <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', paddingTop: 2 }}>★ TASTE CODE</div>
+        <div style={{ display: 'flex', alignItems: 'center', minHeight: 18 }}>
+          {activeEntry && (
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>
+              {DIM_AXIS_LABEL[activeEntry.dimKey] ?? activeEntry.dimKey}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexShrink: 0, alignSelf: 'flex-start' }}>
+          {code.entries.map(entry => {
+            const isActive = expanded === entry.letter
+            const strength = Math.round((entry.gap / 100) * 100)
+            return (
+              <div key={entry.letter} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={() => setExpanded(isActive ? null : entry.letter)}
+                  style={{
+                    background: isActive ? 'var(--ink)' : 'var(--paper-2)',
+                    border: `0.5px solid ${isActive ? 'var(--ink)' : 'var(--paper-edge)'}`,
+                    borderRadius: 10, width: 76, height: 76, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all 120ms', gap: 4, padding: 0,
+                  }}
+                >
+                  <span style={{ fontFamily: 'var(--serif-display)', fontSize: 38, fontWeight: 600, lineHeight: 1, color: isActive ? 'var(--paper)' : 'var(--ink)' }}>
+                    {entry.letter}
+                  </span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.08em', textTransform: 'uppercase', color: isActive ? 'var(--paper-edge)' : 'var(--ink-4)' }}>
+                    {entry.label}
+                  </span>
+                </button>
+                <div style={{ width: 76, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ width: `${strength}%`, height: '100%', background: isActive ? 'var(--ink)' : accentColor, borderRadius: 999, transition: 'all 120ms' }} />
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>{strength}</div>
+                {entry.sampleFilms.length > 0 && (
+                  <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
+                    {entry.sampleFilms.slice(0, 3).map(f => (
+                      <div key={f.film_id} style={{ width: 22, height: 33, borderRadius: 2, overflow: 'hidden', background: 'var(--paper-edge)', position: 'relative', flexShrink: 0, opacity: isActive ? 1 : 0.65, transition: 'opacity 120ms' }}>
+                        {f.poster_path && <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ alignSelf: 'flex-start' }}>
+          {activeEntry ? (
+            <>
+              <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 15, lineHeight: 1.65, color: 'var(--ink-2)', margin: '0 0 20px' }}>
+                {activeEntry.description}
+              </p>
+              {activeEntry.sampleFilms.length > 0 && (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {activeEntry.sampleFilms.map(f => (
+                    <div key={f.film_id} style={{ textAlign: 'center', width: 80 }}>
+                      <div style={{ width: 80, height: 120, borderRadius: 5, overflow: 'hidden', background: 'var(--paper-edge)', position: 'relative', marginBottom: 6 }}>
+                        {f.poster_path ? <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, fontSize: 7, fontFamily: 'var(--mono)', color: 'var(--ink-4)', textAlign: 'center' }}>{f.title.toUpperCase()}</div>}
+                      </div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: accentColor }}>{f.stars.toFixed(1)}★</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => setExpanded(null)} style={{ marginTop: 16, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)', letterSpacing: '0.06em', padding: 0, textDecoration: 'underline', textUnderlineOffset: 3 }}>← back</button>
+            </>
+          ) : (
+            <>
+              {prose && <p style={{ fontFamily: 'var(--serif-display)', fontSize: 19, lineHeight: 1.6, fontWeight: 400, color: 'var(--ink)', margin: '0 0 12px', fontStyle: 'italic' }}>{prose}</p>}
+              <p style={{ margin: '0 0 16px', fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.5 }}>tap a letter to explore that signal.</p>
+              {onViewFull && (
+                <button onClick={onViewFull} style={{ background: 'none', border: '0.5px solid var(--ink-3)', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-3)', letterSpacing: '0.08em', transition: 'all 120ms' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--ink)'; e.currentTarget.style.color = 'var(--ink)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--ink-3)'; e.currentTarget.style.color = 'var(--ink-3)' }}>
+                  VIEW FULL TASTE CODE →
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function RankedList({ items, getLabel, onSelect }: {
@@ -103,7 +212,6 @@ export default function FriendProfilePage({ params }: { params: Promise<{ id: st
   const [friendName, setFriendName] = useState('')
   const [taste, setTaste] = useState<TasteProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selectedDim, setSelectedDim] = useState<keyof TasteDimensions | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<SelectedCategory | null>(null)
 
   const panelFilms = useMemo(() => {
@@ -196,70 +304,14 @@ export default function FriendProfilePage({ params }: { params: Promise<{ id: st
               </div>
             )}
 
-            {/* ── SECTION 1: Taste Shape — radar + prose side by side ─────── */}
-            {hasEnoughData && (
-              <div style={{ marginBottom: 64 }}>
-                <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 20 }}>★ THEIR TASTE</div>
-                <div style={{ display: 'flex', gap: 56, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  <div style={{ flex: '0 0 auto' }}>
-                    <RadarChart
-                      dimensions={taste.dimensions}
-                      selectedDim={selectedDim}
-                      onSelectDim={setSelectedDim}
-                      accentColor="var(--p-ink)"
-                    />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 240 }}>
-                    {selectedDim ? (() => {
-                      const info      = AXIS_INFO[selectedDim]
-                      const ax        = AXES.find(a => a.key === selectedDim)!
-                      const val       = taste.dimensions[selectedDim]
-                      const firstName = friendName ? friendName.split(' ')[0] : undefined
-                      return (
-                        <div>
-                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.1em', color: 'var(--p-ink)', marginBottom: 2, textTransform: 'uppercase' }}>
-                            {info.title}
-                          </div>
-                          <DimBar
-                            neg={ax.neg}
-                            pos={ax.pos}
-                            myVal={val}
-                            myColor="var(--p-ink)"
-                          />
-                          <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.65 }}>
-                            {info.describe(val, firstName)}
-                          </p>
-                          <button
-                            onClick={() => setSelectedDim(null)}
-                            style={{
-                              marginTop: 16, background: 'none', border: 'none', cursor: 'pointer',
-                              fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
-                              letterSpacing: '0.06em', padding: 0, textDecoration: 'underline',
-                              textUnderlineOffset: 3,
-                            }}
-                          >
-                            ← back to overview
-                          </button>
-                        </div>
-                      )
-                    })() : (
-                      <>
-                        {taste.prose && (
-                          <p style={{
-                            fontFamily: 'var(--serif-display)', fontSize: 20, lineHeight: 1.6,
-                            fontWeight: 400, color: 'var(--ink)', margin: '0 0 20px', fontStyle: 'italic',
-                          }}>
-                            {taste.prose}
-                          </p>
-                        )}
-                        <p style={{ margin: 0, fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-4)', lineHeight: 1.5 }}>
-                          click any label on the chart to explore that dimension.
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
+            {/* ── SECTION 1: Taste Code ───────────────────────────────────── */}
+            {hasEnoughData && taste.tasteCode && (
+              <TasteCodeDisplay
+                code={taste.tasteCode}
+                prose={taste.prose}
+                accentColor="var(--p-ink)"
+                onViewFull={() => router.push(`/friends/${friendId}/taste-code`)}
+              />
             )}
 
             {/* ── SECTION 2: Film Signature ───────────────────────────────── */}

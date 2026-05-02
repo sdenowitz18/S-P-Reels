@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TasteDimensions, computeTasteVector } from '@/lib/prompts/taste-profile'
-import { FilmBrief } from '@/lib/prompts/film-brief'
+import { FilmBrief, FilmDimensionsV2 } from '@/lib/prompts/film-brief'
 import { posterUrl } from '@/lib/types'
+import { computeTasteCode, RatedFilmEntry } from '@/lib/taste-code'
 
 const DIMS = ['pace', 'story_engine', 'tone', 'warmth', 'complexity', 'style'] as const
 
@@ -78,7 +79,13 @@ export async function GET(
     pace: 0, story_engine: 0, tone: 0, warmth: 0, complexity: 0, style: 0,
   }
 
-  // ── Genres — weighted score + avg rating ─────────────────────────────────────
+  // ── Overall avg rating (used as baseline for genre deviation) ──────────────
+  const ratedEntries = allWatched.filter(e => e.my_stars != null)
+  const overallAvg = ratedEntries.length > 0
+    ? ratedEntries.reduce((s, e) => s + (e.my_stars as number), 0) / ratedEntries.length
+    : 3
+
+  // ── Nuanced genres (ai_brief) — weighted score + avg rating ─────────────────
   const genreData: Record<string, { score: number; ratingTotal: number; ratingCount: number }> = {}
 
   for (const entry of allWatched) {
@@ -97,24 +104,56 @@ export async function GET(
 
   const genres = Object.entries(genreData)
     .filter(([, d]) => d.ratingCount >= 3)
-    .map(([label, d]) => ({
-      label,
-      score: Math.round(d.score * 10) / 10,
-      count: d.ratingCount,
-      avgRating: d.ratingCount > 0 ? Math.round((d.ratingTotal / d.ratingCount) * 10) / 10 : null,
-    }))
-    .sort((a, b) => {
-      const rDiff = (b.avgRating ?? 0) - (a.avgRating ?? 0)
-      return Math.abs(rDiff) > 0.001 ? rDiff : b.count - a.count
+    .map(([label, d]) => {
+      const avgRating = Math.round((d.ratingTotal / d.ratingCount) * 10) / 10
+      return {
+        label,
+        score: Math.round(d.score * 10) / 10,
+        count: d.ratingCount,
+        avgRating,
+        weightedScore: avgRating * Math.log(d.ratingCount + 1),
+      }
     })
+    .sort((a, b) => b.weightedScore - a.weightedScore)
     .slice(0, 12)
+
+  // ── Simple genres (tmdb_genres, fallback to ai_brief) — for quadrant chart ──
+  const simpleGenreData: Record<string, { ratingTotal: number; ratingCount: number }> = {}
+
+  for (const entry of allWatched) {
+    const tmdbGenres: string[] = (entry.film?.tmdb_genres as string[] | null) ?? []
+    const fallbackGenres: string[] = tmdbGenres.length > 0
+      ? tmdbGenres
+      : ((entry.film?.ai_brief as { genres?: string[] } | null)?.genres ?? [])
+    const stars = entry.my_stars as number | null
+    for (const g of fallbackGenres) {
+      simpleGenreData[g] = simpleGenreData[g] ?? { ratingTotal: 0, ratingCount: 0 }
+      if (stars != null) {
+        simpleGenreData[g].ratingTotal += stars
+        simpleGenreData[g].ratingCount++
+      }
+    }
+  }
+
+  const simpleGenres = Object.entries(simpleGenreData)
+    .filter(([, d]) => d.ratingCount >= 2)
+    .map(([label, d]) => {
+      const avgRating = Math.round((d.ratingTotal / d.ratingCount) * 100) / 100
+      return {
+        label,
+        avgRating,
+        count: d.ratingCount,
+        weightedScore: avgRating * Math.log(d.ratingCount + 1),
+      }
+    })
+    .sort((a, b) => b.weightedScore - a.weightedScore)
 
   // ── Film signature ────────────────────────────────────────────────────────────
   const signature = rated
     .filter(e => (e.my_stars as number) >= 3.5)
     .map(e => {
       const brief = e.film.ai_brief as FilmBrief
-      const signal = DIMS.reduce((sum, d) => sum + Math.abs(brief.dimensions[d] ?? 0), 0)
+      const signal = DIMS.reduce((sum, d) => sum + Math.abs(brief.dimensions?.[d] ?? 0), 0)
       return { entry: e, signal }
     })
     .sort((a, b) => (b.signal * b.entry.my_stars) - (a.signal * a.entry.my_stars))
@@ -226,10 +265,24 @@ export async function GET(
     my_stars: (e.my_stars ?? null) as number | null,
   }))
 
+  // ── Taste code (Approach C) ──────────────────────────────────────────────────
+  const tasteCodeFilms: RatedFilmEntry[] = allWatched
+    .filter(e => e.my_stars != null && (e.film?.ai_brief as { dimensions_v2?: unknown } | null)?.dimensions_v2)
+    .map(e => ({
+      film_id:      e.film_id as string,
+      title:        (e.film?.title ?? '') as string,
+      poster_path:  e.film?.poster_path ? posterUrl(e.film.poster_path, 'w185') : null,
+      stars:        e.my_stars as number,
+      dimensions_v2: (e.film.ai_brief as { dimensions_v2: FilmDimensionsV2 }).dimensions_v2,
+    }))
+  const tasteCode = computeTasteCode(tasteCodeFilms)
+
   return NextResponse.json({
     friendName,
     dimensions,
     genres,
+    simpleGenres,
+    overallAvg,
     signature,
     topRated,
     prose: null,
@@ -239,5 +292,6 @@ export async function GET(
     libraryFilms,
     filmCount: allWatched.length,
     ratedCount: rated.length,
+    tasteCode,
   })
 }

@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 function Field({ label, value, onChange, type = 'text', placeholder }: {
@@ -29,8 +29,11 @@ function Field({ label, value, onChange, type = 'text', placeholder }: {
   )
 }
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const errorParam = searchParams.get('error')
+
   const [email, setEmail] = useState('')
   const [pw, setPw] = useState('')
   const [err, setErr] = useState('')
@@ -54,9 +57,43 @@ export default function SignInPage() {
       return
     }
 
-    router.push('/home')
+    router.push('/onboarding')
   }
 
+  return (
+    <main style={{ padding: '64px 64px 96px', maxWidth: 540, margin: '0 auto' }}>
+      <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ COME BACK IN</div>
+      <h1 className="t-display" style={{ fontSize: 60, lineHeight: 1, marginTop: 14 }}>
+        log <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>back in</span>.
+      </h1>
+
+      {errorParam === 'invite_failed' && (
+        <div style={{ marginTop: 20, padding: '14px 18px', background: 'var(--p-tint)', border: '0.5px solid var(--p-ink)40', borderRadius: 10 }}>
+          <p style={{ margin: 0, fontSize: 13, fontStyle: 'italic', color: 'var(--p-ink)', fontFamily: 'var(--serif-italic)', lineHeight: 1.5 }}>
+            that invite link has expired or already been used. ask your friend to send a new one, or{' '}
+            <Link href="/signup" style={{ color: 'var(--p-ink)', fontWeight: 500 }}>create an account</Link> directly.
+          </p>
+        </div>
+      )}
+
+      <form onSubmit={submit} style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Field label="email"    value={email} onChange={setEmail} placeholder="you@somewhere" type="email" />
+        <Field label="password" value={pw}    onChange={setPw} type="password" />
+        {err && <div style={{ fontSize: 13, color: 'var(--p-ink)', fontStyle: 'italic', fontFamily: 'var(--serif-italic)' }}>{err}</div>}
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button type="submit" disabled={loading} className="btn" style={{ padding: '12px 22px', fontSize: 14, borderRadius: 999 }}>
+            {loading ? 'logging in…' : 'log in  →'}
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic', fontFamily: 'var(--serif-italic)' }}>
+            new here? <Link href="/signup" style={{ color: 'var(--ink-2)' }}>sign up</Link>
+          </span>
+        </div>
+      </form>
+    </main>
+  )
+}
+
+export default function SignInPage() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
       <header style={{ padding: '24px 36px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -71,27 +108,9 @@ export default function SignInPage() {
           sign up
         </Link>
       </header>
-
-      <main style={{ padding: '64px 64px 96px', maxWidth: 540, margin: '0 auto' }}>
-        <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ COME BACK IN</div>
-        <h1 className="t-display" style={{ fontSize: 60, lineHeight: 1, marginTop: 14 }}>
-          log <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>back in</span>.
-        </h1>
-
-        <form onSubmit={submit} style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Field label="email"    value={email} onChange={setEmail} placeholder="you@somewhere" type="email" />
-          <Field label="password" value={pw}    onChange={setPw} type="password" />
-          {err && <div style={{ fontSize: 13, color: 'var(--p-ink)', fontStyle: 'italic', fontFamily: 'var(--serif-italic)' }}>{err}</div>}
-          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <button type="submit" disabled={loading} className="btn" style={{ padding: '12px 22px', fontSize: 14, borderRadius: 999 }}>
-              {loading ? 'logging in…' : 'log in  →'}
-            </button>
-            <span style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic', fontFamily: 'var(--serif-italic)' }}>
-              new here? <Link href="/signup" style={{ color: 'var(--ink-2)' }}>sign up</Link>
-            </span>
-          </div>
-        </form>
-      </main>
+      <Suspense>
+        <SignInForm />
+      </Suspense>
     </div>
   )
 }

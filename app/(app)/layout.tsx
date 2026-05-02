@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
+import { DevResetButton } from '@/components/dev-reset-button'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -27,5 +28,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       .is('to_user_id', null)
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {children}
+      {process.env.NODE_ENV !== 'production' && <DevResetButton />}
+    </>
+  )
 }

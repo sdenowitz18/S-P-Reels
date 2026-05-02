@@ -5,12 +5,12 @@
  * Safe to re-run — skips films that already have a brief.
  * Processes one at a time to avoid OpenAI rate limits.
  */
-import { createClient } from '@supabase/supabase-js'
-import { generateFilmBrief } from '../lib/prompts/film-brief'
 import * as dotenv from 'dotenv'
 import * as path from 'path'
-
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') })
+
+import { createClient } from '@supabase/supabase-js'
+import { generateFilmBrief } from '../lib/prompts/film-brief'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -67,7 +67,9 @@ export interface Film {
   keywords: string[] | null
   tmdb_genres: string[] | null
   ai_brief?: FilmBriefData | null
+  dimensions_v2?: Record<string, number> | null
   fetched_at: string
+  brief_at?: string | null
 }
 
 export interface CastMember {

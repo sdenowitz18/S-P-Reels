@@ -24,11 +24,20 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
-  const isAuthRoute = pathname.startsWith('/signin') || pathname.startsWith('/signup') || pathname.startsWith('/auth') || pathname.startsWith('/welcome')
+  const isAuthRoute   = pathname.startsWith('/signin') || pathname.startsWith('/signup') || pathname.startsWith('/auth') || pathname.startsWith('/welcome')
+  const isPublicRoute = pathname === '/' || isAuthRoute
 
-  if (!user && !isAuthRoute) {
+  // Unauthenticated: only allow public routes
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/signin'
+    return NextResponse.redirect(url)
+  }
+
+  // Authenticated: redirect away from the marketing landing page → app home
+  if (user && pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/home'
     return NextResponse.redirect(url)
   }
 

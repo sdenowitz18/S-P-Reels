@@ -2,11 +2,11 @@ import { Film, FilmKind, CastMember } from './types'
 import { generateFilmBrief } from './prompts/film-brief'
 
 const BASE = 'https://api.themoviedb.org/3'
-const KEY = process.env.TMDB_API_KEY!
 
 async function tmdb(path: string, params: Record<string, string> = {}) {
+  const key = process.env.TMDB_API_KEY!
   const url = new URL(`${BASE}${path}`)
-  url.searchParams.set('api_key', KEY)
+  url.searchParams.set('api_key', key)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
   const res = await fetch(url.toString(), { next: { revalidate: 604800 } }) // 7 days
   if (!res.ok) throw new Error(`TMDB ${path} → ${res.status}`)

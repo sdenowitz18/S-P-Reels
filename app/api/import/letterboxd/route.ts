@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { searchFilms } from '@/lib/tmdb'
-import { getOrCacheFilm } from '@/lib/tmdb'
+import { searchFilms, getOrCacheFilm } from '@/lib/tmdb'
 
 interface ImportFilm {
   title: string
@@ -56,38 +55,41 @@ export async function POST(request: NextRequest) {
   const alreadyRated = new Set((existing ?? []).filter(e => e.my_stars != null).map(e => e.film_id))
 
   const results = {
-    imported: 0,
-    skipped: 0,   // already in sp-reels with a rating
-    notFound: 0,
-    failed: 0,
+    imported:       0,
+    skipped:        0,
+    notFound:       0,
+    failed:         0,
     notFoundTitles: [] as string[],
   }
 
-  for (const film of films) {
+  // Process all films in this chunk concurrently — each does a TMDB search + DB
+  // upsert independently, so there's no reason to serialize them.
+  // TMDB allows 40 req/10s; a chunk of 15 is well within limits.
+  await Promise.all(films.map(async film => {
     try {
       const match = await findTmdbMatch(film.title, film.year)
       if (!match) {
         results.notFound++
         results.notFoundTitles.push(`${film.title} (${film.year ?? '?'})`)
-        continue
+        return
       }
 
       // Skip if user already has this film rated in sp-reels
       if (alreadyRated.has(match.id)) {
         results.skipped++
-        continue
+        return
       }
 
-      // Cache the film (fires brief generation in background)
+      // Cache the film (fetches from TMDB if not already in DB)
       await getOrCacheFilm(supabase, match.id)
 
       // Upsert library entry — use Letterboxd rating if we have one
       const entry = {
-        user_id: user.id,
-        film_id: match.id,
-        list: 'watched',
-        audience: ['me'],
-        my_stars: film.stars ?? null,
+        user_id:     user.id,
+        film_id:     match.id,
+        list:        'watched',
+        audience:    ['me'],
+        my_stars:    film.stars ?? null,
         finished_at: film.stars != null ? new Date().toISOString() : null,
       }
 
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest) {
     } catch {
       results.failed++
     }
-  }
+  }))
 
   return NextResponse.json(results)
 }

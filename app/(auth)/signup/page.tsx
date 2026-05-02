@@ -65,7 +65,8 @@ export default function SignUpPage() {
       body: JSON.stringify({ name: name.trim() }),
     })
 
-    router.push('/home')
+    // Email confirmation is disabled — go straight to onboarding
+    router.push('/onboarding')
   }
 
   return (
