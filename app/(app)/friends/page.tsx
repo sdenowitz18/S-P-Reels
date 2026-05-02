@@ -230,9 +230,9 @@ export default function FriendsPage() {
 
   return (
     <AppShell active="friends">
-      <div style={{ padding: '56px 64px', maxWidth: 760, margin: '0 auto' }}>
+      <div style={{ padding: 'clamp(28px,5vw,56px) clamp(16px,5vw,64px) clamp(96px,10vw,96px)', maxWidth: 760, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ FRIENDS</div>
-        <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, marginBottom: 8 }}>
+        <h1 className="t-display" style={{ fontSize: "clamp(32px,5vw,52px)", lineHeight: 1, marginBottom: 8 }}>
           your <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--p-ink)' }}>people</span>.
         </h1>
         <p style={{ fontStyle: 'italic', fontSize: 15, color: 'var(--ink-2)', marginTop: 14, lineHeight: 1.5, fontFamily: 'var(--serif-italic)', maxWidth: 480, marginBottom: 40 }}>

@@ -370,7 +370,7 @@ export default function RecommendedPage() {
         </>
       )}
 
-      <div style={{ padding: '56px 64px', maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ padding: 'clamp(28px,5vw,56px) clamp(16px,5vw,64px) clamp(96px,10vw,96px)', maxWidth: 860, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ RECOMMENDED</div>
         <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, marginBottom: 48 }}>
           what to <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--forest)' }}>watch next</span>.

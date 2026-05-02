@@ -112,7 +112,7 @@ export default function MoodPage() {
 
   return (
     <AppShell active="mood">
-      <div style={{ padding: '56px 64px', maxWidth: 960, margin: '0 auto' }}>
+      <div style={{ padding: 'clamp(28px,5vw,56px) clamp(16px,5vw,64px) clamp(96px,10vw,96px)', maxWidth: 960, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ MOOD ROOM</div>
         <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, marginBottom: 8 }}>
           what do you feel like <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sp-ink)' }}>watching</span>?

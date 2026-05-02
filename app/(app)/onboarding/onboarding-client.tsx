@@ -3,9 +3,11 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
+import { useIsMobile } from '@/lib/use-is-mobile'
 
 export default function WelcomeClient({ name }: { name: string }) {
   const router  = useRouter()
+  const isMobile = useIsMobile()
   const [starting, setStarting] = useState(false)
 
   const startTasteSetup = async () => {
@@ -42,13 +44,13 @@ export default function WelcomeClient({ name }: { name: string }) {
 
   return (
     <AppShell withAdd={false}>
-      <div style={{ padding: '56px 64px', maxWidth: 720, margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '28px 20px 96px' : '56px 64px', maxWidth: 720, margin: '0 auto' }}>
 
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 14 }}>
           ★ WELCOME
         </div>
 
-        <h1 className="t-display" style={{ fontSize: 48, lineHeight: 1.05, marginBottom: 16 }}>
+        <h1 className="t-display" style={{ fontSize: isMobile ? 36 : 48, lineHeight: 1.05, marginBottom: 16 }}>
           good to have you,{' '}
           <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>
             {name}
@@ -57,21 +59,21 @@ export default function WelcomeClient({ name }: { name: string }) {
         </h1>
 
         <p style={{
-          fontStyle: 'italic', fontSize: 16, color: 'var(--ink-2)',
+          fontStyle: 'italic', fontSize: isMobile ? 14 : 16, color: 'var(--ink-2)',
           fontFamily: 'var(--serif-italic)', lineHeight: 1.65,
-          margin: '0 0 52px', maxWidth: 520,
+          margin: isMobile ? '0 0 32px' : '0 0 52px', maxWidth: 520,
         }}>
           let's build your taste profile. it'll shape your recommendations, your compatibility with friends, and how we talk about films with you.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 32 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 12 : 18, marginBottom: 32 }}>
 
           {/* Option A — Letterboxd */}
           <button
             onClick={() => router.push('/import')}
             style={{
               textAlign: 'left', cursor: 'pointer',
-              padding: '28px 26px 32px',
+              padding: isMobile ? '22px 20px 26px' : '28px 26px 32px',
               background: 'var(--bone)',
               border: '0.5px solid var(--paper-edge)',
               borderRadius: 14,
@@ -89,8 +91,13 @@ export default function WelcomeClient({ name }: { name: string }) {
               el.style.border = '0.5px solid var(--paper-edge)'
             }}
           >
-            <div className="t-meta" style={{ fontSize: 9, color: 'var(--sun)', marginBottom: 14 }}>
-              ★ IMPORT YOUR HISTORY
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div className="t-meta" style={{ fontSize: 9, color: 'var(--sun)' }}>
+                ★ IMPORT YOUR HISTORY
+              </div>
+              <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-4)' }}>
+                ~5–10 min
+              </div>
             </div>
             <div className="t-display" style={{ fontSize: 22, lineHeight: 1.15, marginBottom: 14 }}>
               import from{' '}
@@ -113,7 +120,7 @@ export default function WelcomeClient({ name }: { name: string }) {
             disabled={starting}
             style={{
               textAlign: 'left', cursor: starting ? 'wait' : 'pointer',
-              padding: '28px 26px 32px',
+              padding: isMobile ? '22px 20px 26px' : '28px 26px 32px',
               background: 'var(--bone)',
               border: '0.5px solid var(--paper-edge)',
               borderRadius: 14,
@@ -133,8 +140,13 @@ export default function WelcomeClient({ name }: { name: string }) {
               el.style.border = '0.5px solid var(--paper-edge)'
             }}
           >
-            <div className="t-meta" style={{ fontSize: 9, color: 'var(--s-ink)', marginBottom: 14 }}>
-              ★ START FRESH
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div className="t-meta" style={{ fontSize: 9, color: 'var(--s-ink)' }}>
+                ★ START FRESH
+              </div>
+              <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-4)' }}>
+                ~5–10 min
+              </div>
             </div>
             <div className="t-display" style={{ fontSize: 22, lineHeight: 1.15, marginBottom: 14 }}>
               taste{' '}

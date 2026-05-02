@@ -600,13 +600,13 @@ export default function ProfilePage() {
 
   return (
     <AppShell>
-      <div style={{ padding: '56px 64px 100px', maxWidth: 1000, margin: '0 auto' }}>
+      <div style={{ padding: 'clamp(28px,5vw,56px) clamp(16px,5vw,64px) clamp(96px,10vw,100px)', maxWidth: 1000, margin: '0 auto' }}>
 
         {/* Header */}
         <div style={{ marginBottom: 48 }}>
           <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ YOUR PROFILE</div>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24 }}>
-            <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, margin: 0 }}>
+            <h1 className="t-display" style={{ fontSize: "clamp(32px,5vw,52px)", lineHeight: 1, margin: 0 }}>
               {profile?.name
                 ? <>{profile.name.split(' ')[0]}'s <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--s-ink)' }}>taste</span>.</>
                 : <>your <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--s-ink)' }}>taste</span>.</>

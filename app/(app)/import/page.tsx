@@ -256,7 +256,7 @@ export default function ImportPage() {
 
   return (
     <AppShell withAdd={false}>
-      <div style={{ padding: '56px 64px', maxWidth: 720, margin: '0 auto' }}>
+      <div style={{ padding: 'clamp(28px,5vw,56px) clamp(16px,5vw,64px) clamp(96px,10vw,96px)', maxWidth: 720, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ IMPORT</div>
         <h1 className="t-display" style={{ fontSize: 44, lineHeight: 1, marginBottom: 8 }}>
           import from <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--forest)' }}>letterboxd</span>.
