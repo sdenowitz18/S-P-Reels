@@ -1,9 +1,11 @@
 'use client'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import useSWR from 'swr'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Wordmark } from './wordmark'
 import { NavPills } from './nav-pills'
+import { fetcher } from '@/lib/fetcher'
 
 interface AppShellProps {
   active?: string
@@ -22,20 +24,11 @@ interface Notification {
 }
 
 export function AppShell({ active, children, withAdd = true, counts: countsProp }: AppShellProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  const { data, mutate } = useSWR('/api/notifications', fetcher)
+  const notifications: Notification[] = data?.notifications ?? []
   const [unread, setUnread] = useState(0)
 
-  const loadNotifications = useCallback(() => {
-    fetch('/api/notifications')
-      .then(r => r.json())
-      .then(d => {
-        setNotifications(d.notifications ?? [])
-        setUnread(d.unread ?? 0)
-      })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => { loadNotifications() }, [loadNotifications])
+  useEffect(() => { if (data?.unread != null) setUnread(data.unread) }, [data?.unread])
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
@@ -45,7 +38,7 @@ export function AppShell({ active, children, withAdd = true, counts: countsProp 
         notifications={notifications}
         unread={unread}
         onNotificationsRead={() => setUnread(0)}
-        onNotificationsLoaded={loadNotifications}
+        onNotificationsLoaded={() => mutate()}
       />
       {children}
       {withAdd && <FloatingAdd />}
@@ -318,17 +311,8 @@ function TastePill() {
   const router = useRouter()
   const pathname = usePathname()
   const isActive = pathname === '/taste-code' || pathname.startsWith('/onboarding/reveal')
-  const [code, setCode] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/profile/taste')
-      .then(r => r.json())
-      .then(d => {
-        const letters = d?.tasteCode?.entries?.map((e: { letter: string }) => e.letter).join('') ?? null
-        setCode(letters)
-      })
-      .catch(() => {})
-  }, [])
+  const { data } = useSWR('/api/profile/taste', fetcher)
+  const code = data?.tasteCode?.entries?.map((e: { letter: string }) => e.letter).join('') ?? null
 
   return (
     <button
@@ -361,7 +345,7 @@ function TastePill() {
     >
       {code ? (
         // 4 mini letter tiles matching the profile page block style
-        code.split('').map((letter, i) => (
+        code.split('').map((letter: string, i: number) => (
           <span key={i} style={{
             width: 22, height: 22,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -393,9 +377,10 @@ function TastePill() {
 function AccountPill() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [initial, setInitial] = useState('·')
-  const [name, setName] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const { data: meData } = useSWR('/api/auth/me', fetcher)
+  const name = meData?.name ?? ''
+  const initial = name ? name[0].toUpperCase() : '·'
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -403,12 +388,6 @@ function AccountPill() {
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
-
-  useEffect(() => {
-    fetch('/api/auth/me').then(r => r.json()).then(d => {
-      if (d.name) { setName(d.name); setInitial(d.name[0].toUpperCase()) }
-    }).catch(() => {})
   }, [])
 
   const handleSignOut = async () => {

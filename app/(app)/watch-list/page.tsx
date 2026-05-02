@@ -1,10 +1,14 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { LibraryEntry, posterUrl } from '@/lib/types'
+import { fetcher } from '@/lib/fetcher'
 import Image from 'next/image'
+
+interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
 
 function WatchListCard({ entry, onOpen, onRemove, onStartWatching }: {
   entry: LibraryEntry
@@ -53,21 +57,15 @@ function WatchListCard({ entry, onOpen, onRemove, onStartWatching }: {
 
 export default function WatchListPage() {
   const router = useRouter()
-  const [entries, setEntries] = useState<LibraryEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
+  const entries: LibraryEntry[] = data?.watchlist ?? []
+  const loading = !data
   const [panel, setPanel] = useState<LibraryEntry | null>(null)
 
-  useEffect(() => {
-    fetch('/api/library')
-      .then(r => r.json())
-      .then(d => { setEntries(d.watchlist ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
-
-  const handleRemove = (id: string) => setEntries(prev => prev.filter(e => e.id !== id))
+  const handleRemove = (id: string) => mutate(d => d ? { ...d, watchlist: d.watchlist.filter((e: LibraryEntry) => e.id !== id) } : d, false)
 
   const handleUpdate = (updated: LibraryEntry) => {
-    setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    mutate(d => d ? { ...d, watchlist: d.watchlist.map((e: LibraryEntry) => e.id === updated.id ? { ...e, ...updated } : e) } : d, false)
     setPanel(prev => prev && prev.id === updated.id ? { ...prev, ...updated } : prev)
   }
 

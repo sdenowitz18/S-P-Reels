@@ -1,10 +1,14 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { LibraryEntry, posterUrl } from '@/lib/types'
+import { fetcher } from '@/lib/fetcher'
 import Image from 'next/image'
+
+interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
 
 function NowPlayingCard({ entry, onFinish, onOpenPanel }: { entry: LibraryEntry; onFinish: (id: string) => void; onOpenPanel: () => void }) {
   const film = entry.film
@@ -114,18 +118,12 @@ function NowPlayingCard({ entry, onFinish, onOpenPanel }: { entry: LibraryEntry;
 
 export default function NowPlayingPage() {
   const router = useRouter()
-  const [entries, setEntries] = useState<LibraryEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
+  const entries: LibraryEntry[] = data?.nowPlaying ?? []
+  const loading = !data
   const [panel, setPanel] = useState<LibraryEntry | null>(null)
 
-  useEffect(() => {
-    fetch('/api/library')
-      .then(r => r.json())
-      .then(d => { setEntries(d.nowPlaying ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
-
-  const handleFinish = (id: string) => setEntries(prev => prev.filter(e => e.id !== id))
+  const handleFinish = (id: string) => mutate(d => d ? { ...d, nowPlaying: d.nowPlaying.filter((e: LibraryEntry) => e.id !== id) } : d, false)
 
   return (
     <AppShell active="now">

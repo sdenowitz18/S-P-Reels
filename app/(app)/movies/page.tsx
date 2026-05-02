@@ -1,10 +1,14 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { LibraryEntry, ReflectionResult, posterUrl } from '@/lib/types'
+import { fetcher } from '@/lib/fetcher'
 import Image from 'next/image'
+
+interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
 
 interface EntryDetail {
   entry: LibraryEntry
@@ -85,8 +89,9 @@ function FilterSelect({ value, onChange, children }: {
 
 export default function MoviesPage() {
   const router = useRouter()
-  const [entries, setEntries] = useState<LibraryEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
+  const entries: LibraryEntry[] = data?.watched ?? []
+  const loading = !data
   const [detail, setDetail] = useState<EntryDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
@@ -96,13 +101,6 @@ export default function MoviesPage() {
   const [filterDecade, setFilterDecade] = useState('')
   const [filterGenre, setFilterGenre] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('added')
-
-  useEffect(() => {
-    fetch('/api/library')
-      .then(r => r.json())
-      .then(d => { setEntries(d.watched ?? []); setLoading(false) })
-      .catch(() => setLoading(false))
-  }, [])
 
   const openDetail = async (entry: LibraryEntry) => {
     setDetailLoading(true)
@@ -118,7 +116,7 @@ export default function MoviesPage() {
   }
 
   const handleUpdate = (updated: LibraryEntry) => {
-    setEntries(prev => prev.map(e => e.id === updated.id ? { ...e, ...updated } : e))
+    mutate(d => d ? { ...d, watched: d.watched.map((e: LibraryEntry) => e.id === updated.id ? { ...e, ...updated } : e) } : d, false)
     setDetail(prev => prev ? { ...prev, entry: { ...prev.entry, ...updated } } : null)
   }
 
@@ -194,7 +192,7 @@ export default function MoviesPage() {
           list="watched"
           reflection={detail.reflection}
           onClose={() => setDetail(null)}
-          onRemove={() => setEntries(prev => prev.filter(e => e.id !== detail.entry.id))}
+          onRemove={() => mutate(d => d ? { ...d, watched: d.watched.filter((e: LibraryEntry) => e.id !== detail.entry.id) } : d, false)}
           onUpdate={handleUpdate}
         />
       )}
