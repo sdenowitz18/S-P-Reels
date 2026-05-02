@@ -6,6 +6,7 @@ import { AppShell } from '@/components/app-shell'
 import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { LibraryEntry, ReflectionResult, posterUrl } from '@/lib/types'
 import { fetcher } from '@/lib/fetcher'
+import { useIsMobile } from '@/lib/use-is-mobile'
 import Image from 'next/image'
 
 interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
@@ -89,6 +90,7 @@ function FilterSelect({ value, onChange, children }: {
 
 export default function MoviesPage() {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
   const entries: LibraryEntry[] = data?.watched ?? []
   const loading = !data
@@ -197,20 +199,20 @@ export default function MoviesPage() {
         />
       )}
 
-      <div style={{ padding: '56px 64px', maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '28px 16px 96px' : '56px 64px', maxWidth: 1200, margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'baseline', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 32, gap: isMobile ? 16 : 0 }}>
           <div>
             <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ THE REEL</div>
-            <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, margin: 0 }}>
+            <h1 className="t-display" style={{ fontSize: isMobile ? 36 : 52, lineHeight: 1, margin: 0 }}>
               everything you've <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>watched</span>.
-              {entries.length > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: 18, fontWeight: 400, color: 'var(--ink-3)', marginLeft: 16 }}>{entries.length}</span>}
+              {entries.length > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: isMobile ? 14 : 18, fontWeight: 400, color: 'var(--ink-3)', marginLeft: 16 }}>{entries.length}</span>}
             </h1>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-soft" onClick={() => router.push('/import')} style={{ padding: '11px 20px', fontSize: 13, borderRadius: 999 }}>
+            {!isMobile && <button className="btn btn-soft" onClick={() => router.push('/import')} style={{ padding: '11px 20px', fontSize: 13, borderRadius: 999 }}>
               import from letterboxd
-            </button>
+            </button>}
             <button className="btn" onClick={() => router.push('/add')} style={{ padding: '11px 20px', fontSize: 13, borderRadius: 999 }}>
               + log a film
             </button>
@@ -330,7 +332,7 @@ export default function MoviesPage() {
         )}
 
         {!loading && filtered.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '32px 18px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(90px, 1fr))' : 'repeat(auto-fill, minmax(130px, 1fr))', gap: isMobile ? '20px 10px' : '32px 18px' }}>
             {filtered.map(entry => (
               <FilmCard key={entry.id} entry={entry} onClick={() => openDetail(entry)} />
             ))}

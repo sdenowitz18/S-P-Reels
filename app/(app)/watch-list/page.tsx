@@ -6,6 +6,7 @@ import { AppShell } from '@/components/app-shell'
 import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { LibraryEntry, posterUrl } from '@/lib/types'
 import { fetcher } from '@/lib/fetcher'
+import { useIsMobile } from '@/lib/use-is-mobile'
 import Image from 'next/image'
 
 interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
@@ -57,6 +58,7 @@ function WatchListCard({ entry, onOpen, onRemove, onStartWatching }: {
 
 export default function WatchListPage() {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
   const entries: LibraryEntry[] = data?.watchlist ?? []
   const loading = !data
@@ -91,11 +93,11 @@ export default function WatchListPage() {
         />
       )}
 
-      <div style={{ padding: '56px 64px', maxWidth: 860, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 40 }}>
+      <div style={{ padding: isMobile ? '28px 16px 96px' : '56px 64px', maxWidth: 860, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'baseline', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 40, gap: isMobile ? 16 : 0 }}>
           <div>
             <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>○ WATCH LIST</div>
-            <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, margin: 0 }}>
+            <h1 className="t-display" style={{ fontSize: isMobile ? 36 : 52, lineHeight: 1, margin: 0 }}>
               films you want to <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--forest)' }}>see</span>.
             </h1>
           </div>

@@ -6,6 +6,7 @@ import { AppShell } from '@/components/app-shell'
 import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { LibraryEntry, posterUrl } from '@/lib/types'
 import { fetcher } from '@/lib/fetcher'
+import { useIsMobile } from '@/lib/use-is-mobile'
 import Image from 'next/image'
 
 interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
@@ -118,6 +119,7 @@ function NowPlayingCard({ entry, onFinish, onOpenPanel }: { entry: LibraryEntry;
 
 export default function NowPlayingPage() {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
   const entries: LibraryEntry[] = data?.nowPlaying ?? []
   const loading = !data
@@ -136,10 +138,10 @@ export default function NowPlayingPage() {
           onMove={() => { handleFinish(panel.id); setPanel(null); router.push('/watch-list') }}
         />
       )}
-      <div style={{ padding: '56px 64px', maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '28px 16px 96px' : '56px 64px', maxWidth: 860, margin: '0 auto' }}>
         <div style={{ marginBottom: 40 }}>
           <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>◐ NOW PLAYING</div>
-          <h1 className="t-display" style={{ fontSize: 52, lineHeight: 1, margin: 0 }}>
+          <h1 className="t-display" style={{ fontSize: isMobile ? 36 : 52, lineHeight: 1, margin: 0 }}>
             what's <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--p-ink)' }}>rolling</span> right now.
           </h1>
         </div>

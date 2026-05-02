@@ -1,6 +1,7 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
+import { useIsMobile } from '@/lib/use-is-mobile'
 
 function DoorCard({ tag, title, sub, cta, onClick, tint, ink, paper }: {
   tag: string; title: React.ReactNode; sub: string; cta: string
@@ -49,16 +50,17 @@ function DoorCard({ tag, title, sub, cta, onClick, tint, ink, paper }: {
 
 export default function HomePage() {
   const router = useRouter()
+  const isMobile = useIsMobile()
   const day = new Date().toLocaleDateString('en', { weekday: 'long' }).toLowerCase()
 
   return (
     <AppShell active="home">
-      <div style={{ padding: '56px 64px 80px', maxWidth: 1280, margin: '0 auto' }}>
+      <div style={{ padding: isMobile ? '28px 16px 96px' : '56px 64px 80px', maxWidth: 1280, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
           ★ {day.toUpperCase()} EVENING · YOUR ROOM
         </div>
 
-        <div style={{ marginTop: 28, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22 }}>
+        <div style={{ marginTop: 28, display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? 12 : 22 }}>
           <DoorCard
             tag="01 · log"
             title="log something i've watched"

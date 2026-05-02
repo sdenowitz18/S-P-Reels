@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Wordmark } from './wordmark'
 import { NavPills } from './nav-pills'
 import { fetcher } from '@/lib/fetcher'
+import { useIsMobile } from '@/lib/use-is-mobile'
 
 interface AppShellProps {
   active?: string
@@ -24,6 +25,7 @@ interface Notification {
 }
 
 export function AppShell({ active, children, withAdd = true, counts: countsProp }: AppShellProps) {
+  const isMobile = useIsMobile()
   const { data, mutate } = useSWR('/api/notifications', fetcher)
   const notifications: Notification[] = data?.notifications ?? []
   const [unread, setUnread] = useState(0)
@@ -37,28 +39,33 @@ export function AppShell({ active, children, withAdd = true, counts: countsProp 
         counts={countsProp}
         notifications={notifications}
         unread={unread}
+        isMobile={isMobile}
         onNotificationsRead={() => setUnread(0)}
         onNotificationsLoaded={() => mutate()}
       />
       {children}
-      {withAdd && <FloatingAdd />}
+      {isMobile
+        ? <MobileBottomNav active={active} unread={unread} />
+        : withAdd && <FloatingAdd />
+      }
     </div>
   )
 }
 
 function TopBar({
-  active, counts, notifications, unread, onNotificationsRead, onNotificationsLoaded,
+  active, counts, notifications, unread, isMobile, onNotificationsRead, onNotificationsLoaded,
 }: {
   active?: string
   counts?: Record<string, number>
   notifications: Notification[]
   unread: number
+  isMobile: boolean
   onNotificationsRead: () => void
   onNotificationsLoaded: () => void
 }) {
   return (
     <header style={{
-      padding: '18px 36px',
+      padding: isMobile ? '14px 18px' : '18px 36px',
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       borderBottom: '0.5px solid var(--paper-edge)',
       background: '#ffffff',
@@ -66,10 +73,10 @@ function TopBar({
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <Wordmark />
-        <TastePill />
+        {!isMobile && <TastePill />}
       </div>
-      <NavPills active={active} counts={counts} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 100, justifyContent: 'flex-end' }}>
+      {!isMobile && <NavPills active={active} counts={counts} />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
         <NotificationBell
           unread={unread}
           notifications={notifications}
@@ -495,5 +502,67 @@ function FloatingAdd() {
         }}
       >+</button>
     </div>
+  )
+}
+
+// ── Mobile bottom nav ─────────────────────────────────────────────────────────
+
+const MOBILE_TABS = [
+  { id: 'movies',      label: 'watched',    href: '/movies',      icon: '★' },
+  { id: 'now',         label: 'now',        href: '/now-playing', icon: '◐' },
+  { id: 'watch',       label: 'list',       href: '/watch-list',  icon: '○' },
+  { id: 'mood',        label: 'mood',       href: '/mood',        icon: '◉' },
+  { id: 'friends',     label: 'friends',    href: '/friends',     icon: '♦' },
+  { id: 'add',         label: 'add',        href: '/add',         icon: '+' },
+]
+
+function MobileBottomNav({ active, unread }: { active?: string; unread: number }) {
+  const pathname = usePathname()
+  return (
+    <nav style={{
+      position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+      background: '#ffffff',
+      borderTop: '0.5px solid var(--paper-edge)',
+      display: 'flex', alignItems: 'stretch',
+      paddingBottom: 'env(safe-area-inset-bottom)',
+    }}>
+      {MOBILE_TABS.map(tab => {
+        const isActive = active === tab.id || pathname === tab.href
+        const isAdd = tab.id === 'add'
+        return (
+          <Link
+            key={tab.id}
+            href={tab.href}
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              padding: '10px 4px',
+              textDecoration: 'none',
+              background: isAdd ? 'var(--ink)' : 'transparent',
+              borderLeft: isAdd ? '0.5px solid var(--paper-edge)' : 'none',
+              position: 'relative',
+            }}
+          >
+            {tab.id === 'friends' && unread > 0 && (
+              <span style={{
+                position: 'absolute', top: 8, right: '50%', transform: 'translateX(8px)',
+                width: 6, height: 6, borderRadius: '50%',
+                background: 'var(--p-ink)', border: '1.5px solid #fff',
+              }} />
+            )}
+            <span style={{
+              fontFamily: 'var(--serif-display)', fontSize: 15,
+              color: isAdd ? 'var(--paper)' : isActive ? 'var(--ink)' : 'var(--ink-4)',
+              lineHeight: 1, marginBottom: 3,
+            }}>{tab.icon}</span>
+            <span style={{
+              fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: isAdd ? 'var(--paper)' : isActive ? 'var(--ink)' : 'var(--ink-4)',
+            }}>{tab.label}</span>
+          </Link>
+        )
+      })}
+    </nav>
   )
 }

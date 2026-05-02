@@ -6,3 +6,27 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ── Responsive utilities ───────────────────────────────── */
+@media (max-width: 767px) {
+  .mobile-hide { display: none !important; }
+  .mobile-only { display: flex !important; }
+
+  /* page containers */
+  .rp-page   { padding: 28px 20px 96px !important; }
+  .rp-narrow { padding: 24px 16px 96px !important; }
+  .rp-wide   { padding: 24px 16px 96px !important; }
+
+  /* grid overrides */
+  .rp-grid-4 { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
+  .rp-grid-3 { grid-template-columns: repeat(1, 1fr) !important; }
+  .rp-grid-2 { grid-template-columns: repeat(1, 1fr) !important; }
+
+  /* type */
+  .rp-h1   { font-size: 36px !important; }
+  .rp-h2   { font-size: 28px !important; }
+  .rp-hero { font-size: 38px !important; line-height: 1.1 !important; }
+}
+
+.mobile-only { display: none; }
+

@@ -85,7 +85,7 @@ export default function SignUpPage() {
         </div>
       </header>
 
-      <main style={{ padding: '64px 64px 96px', maxWidth: 560, margin: '0 auto' }}>
+      <main style={{ padding: 'clamp(32px, 8vw, 64px) clamp(20px, 8vw, 64px) 96px', maxWidth: 560, margin: '0 auto' }}>
         <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ MAKE AN ACCOUNT</div>
         <h1 className="t-display" style={{ fontSize: 60, lineHeight: 1, marginTop: 14 }}>
           tell us your <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>name</span>.

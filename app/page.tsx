@@ -1,5 +1,7 @@
+'use client'
 import Link from 'next/link'
 import { AnimatedLetterBlocks } from '@/components/animated-letter-blocks'
+import { useIsMobile } from '@/lib/use-is-mobile'
 
 // ── Feature cards ─────────────────────────────────────────────────────────────
 
@@ -74,11 +76,12 @@ function tintFor(tone: string) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
+  const isMobile = useIsMobile()
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
 
       {/* ── Nav ── */}
-      <header style={{ padding: '20px 36px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <header style={{ padding: isMobile ? '16px 20px' : '20px 36px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{
           fontFamily: 'var(--serif-display)', fontSize: 32, fontWeight: 600, lineHeight: 1,
           display: 'inline-flex', alignItems: 'baseline', color: 'var(--ink)',
@@ -96,20 +99,20 @@ export default function LandingPage() {
 
         {/* ── Hero ── */}
         <section style={{
-          padding: '28px 36px 64px',
+          padding: isMobile ? '24px 20px 48px' : '28px 36px 64px',
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           textAlign: 'center',
         }}>
 
           {/* Animated letter blocks — the brand moment */}
-          <div style={{ marginBottom: 44 }}>
+          <div style={{ marginBottom: isMobile ? 28 : 44 }}>
             <AnimatedLetterBlocks />
           </div>
 
           {/* Headline */}
           <h1 style={{
-            fontFamily: 'var(--serif-display)', fontSize: 52, fontWeight: 400,
-            lineHeight: 1.15, color: 'var(--ink)', margin: '0 0 18px',
+            fontFamily: 'var(--serif-display)', fontSize: isMobile ? 34 : 52, fontWeight: 400,
+            lineHeight: 1.15, color: 'var(--ink)', margin: '0 0 16px',
             maxWidth: 640,
           }}>
             You have a taste.{' '}
@@ -120,53 +123,53 @@ export default function LandingPage() {
 
           {/* Subline */}
           <p style={{
-            fontFamily: 'var(--serif-body)', fontSize: 18, fontStyle: 'italic',
-            color: 'var(--ink-3)', lineHeight: 1.6, margin: '0 0 40px',
+            fontFamily: 'var(--serif-body)', fontSize: isMobile ? 15 : 18, fontStyle: 'italic',
+            color: 'var(--ink-3)', lineHeight: 1.6, margin: '0 0 32px',
             maxWidth: 520,
           }}>
             A living record of how you watch — and a mirror that shows you exactly what kind of viewer you are.
           </p>
 
           {/* CTAs */}
-          <div style={{ display: 'inline-flex', gap: 12 }}>
-            <Link href="/signup" className="btn" style={{ padding: '14px 26px', fontSize: 15, borderRadius: 999, textDecoration: 'none' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, alignItems: 'center' }}>
+            <Link href="/signup" className="btn" style={{ padding: isMobile ? '13px 22px' : '14px 26px', fontSize: 15, borderRadius: 999, textDecoration: 'none' }}>
               get your taste code →
             </Link>
-            <Link href="/signin" className="btn btn-soft" style={{ padding: '14px 22px', fontSize: 15, borderRadius: 999, textDecoration: 'none' }}>
+            <Link href="/signin" className="btn btn-soft" style={{ padding: isMobile ? '11px 18px' : '14px 22px', fontSize: isMobile ? 13 : 15, borderRadius: 999, textDecoration: 'none' }}>
               i already have an account
             </Link>
           </div>
         </section>
 
         {/* ── Features: Build · Find · Refine · Share ── */}
-        <section style={{ padding: '0 48px 96px', maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+        <section style={{ padding: isMobile ? '0 20px 64px' : '0 48px 96px', maxWidth: 1200, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? 10 : 14 }}>
             {FEATURES.map(f => (
               <div key={f.verb} style={{
-                padding: '32px 28px',
+                padding: isMobile ? '20px 16px' : '32px 28px',
                 background: tintFor(f.tone),
                 border: '0.5px solid var(--paper-edge)',
-                borderRadius: 16,
-                display: 'flex', flexDirection: 'column', gap: 12,
+                borderRadius: isMobile ? 12 : 16,
+                display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 12,
               }}>
                 <div style={{
-                  fontFamily: 'var(--serif-display)', fontSize: 38, fontWeight: 500,
+                  fontFamily: 'var(--serif-display)', fontSize: isMobile ? 26 : 38, fontWeight: 500,
                   lineHeight: 1, color: 'var(--ink)',
                 }}>
                   {f.verb}
                 </div>
                 <div style={{
-                  fontFamily: 'var(--serif-body)', fontSize: 14, fontWeight: 600,
+                  fontFamily: 'var(--serif-body)', fontSize: isMobile ? 12 : 14, fontWeight: 600,
                   color: 'var(--ink-2)', lineHeight: 1.3,
                 }}>
                   {f.headline}
                 </div>
-                <div style={{
+                {!isMobile && <div style={{
                   fontFamily: 'var(--serif-body)', fontSize: 13.5, fontStyle: 'italic',
                   color: 'var(--ink-3)', lineHeight: 1.65,
                 }}>
                   {f.body}
-                </div>
+                </div>}
               </div>
             ))}
           </div>
@@ -174,22 +177,22 @@ export default function LandingPage() {
 
         {/* ── Testimonials ── */}
         <section style={{
-          padding: '72px 48px 96px',
+          padding: isMobile ? '48px 20px 64px' : '72px 48px 96px',
           background: 'var(--bone)',
           borderTop: '0.5px solid var(--paper-edge)',
         }}>
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
 
-            <div style={{ textAlign: 'center', marginBottom: 52 }}>
+            <div style={{ textAlign: 'center', marginBottom: isMobile ? 32 : 52 }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 12 }}>
                 ★ from our users
               </div>
-              <h2 style={{ fontFamily: 'var(--serif-display)', fontSize: 34, fontWeight: 400, color: 'var(--ink)', margin: 0, fontStyle: 'italic' }}>
+              <h2 style={{ fontFamily: 'var(--serif-display)', fontSize: isMobile ? 26 : 34, fontWeight: 400, color: 'var(--ink)', margin: 0, fontStyle: 'italic' }}>
                 what people are saying
               </h2>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? 10 : 16 }}>
               {QUOTES.map((q, i) => (
                 <div key={i} style={{
                   padding: '28px 26px',
@@ -221,10 +224,10 @@ export default function LandingPage() {
 
         {/* ── Footer CTA ── */}
         <section style={{
-          padding: '80px 36px',
+          padding: isMobile ? '52px 24px' : '80px 36px',
           display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
         }}>
-          <h2 style={{ fontFamily: 'var(--serif-display)', fontSize: 42, fontWeight: 400, color: 'var(--ink)', margin: '0 0 18px', lineHeight: 1.15 }}>
+          <h2 style={{ fontFamily: 'var(--serif-display)', fontSize: isMobile ? 30 : 42, fontWeight: 400, color: 'var(--ink)', margin: '0 0 18px', lineHeight: 1.15 }}>
             Find out what your four letters are.
           </h2>
           <p style={{ fontFamily: 'var(--serif-body)', fontSize: 16, fontStyle: 'italic', color: 'var(--ink-3)', margin: '0 0 36px', maxWidth: 400, lineHeight: 1.6 }}>
