@@ -2,12 +2,12 @@
 import Link from 'next/link'
 
 const TABS = [
-  { id: 'movies',      label: 'watched',     href: '/movies' },
-  { id: 'now',         label: 'now playing', href: '/now-playing' },
-  { id: 'watch',       label: 'watch list',  href: '/watch-list' },
-  { id: 'recommended', label: 'recommended', href: '/recommended' },
-  { id: 'mood',        label: 'mood room',   href: '/mood' },
-  { id: 'friends',     label: 'friends',     href: '/friends' },
+  { id: 'movies',  label: 'watched',    href: '/movies' },
+  { id: 'now',     label: 'now playing', href: '/now-playing' },
+  { id: 'watch',   label: 'watch list', href: '/watch-list' },
+  { id: 'films',   label: 'catalog',    href: '/films' },
+  { id: 'mood',    label: 'mood room',  href: '/mood' },
+  { id: 'friends', label: 'friends',    href: '/friends' },
 ]
 
 interface NavPillsProps {

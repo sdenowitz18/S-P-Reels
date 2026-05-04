@@ -88,19 +88,11 @@ export default function StagePage({ params }: { params: Promise<{ slug: string }
             onClick={() => choose('now-playing')}
           />
           <StageCard
-            tag="● FINISHED — QUICK LOG"
-            title="just rate it"
-            sub="drop your stars and a note. done in thirty seconds."
+            tag="● FINISHED"
+            title="rate it"
+            sub="rate it, log how rewatchable it is, and see how it fits your taste."
             tint="var(--s-tint)" ink="var(--s-ink)"
             onClick={() => choose('rate')}
-          />
-          <StageCard
-            tag="✦ FINISHED — FULL REFLECTION"
-            title="rate & reflect"
-            sub="a short interview, then your rating. we'll capture what actually made it stick — or what didn't."
-            tint="var(--sun-tint)" ink="var(--sun)"
-            onClick={() => choose('reflect')}
-            wide
           />
         </div>
       </div>

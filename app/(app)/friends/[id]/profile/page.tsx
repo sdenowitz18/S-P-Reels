@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteCode } from '@/lib/taste-code'
+import { poleBadgeTier } from '@/components/taste-letter'
 
 interface GenreEntry { label: string; score: number; count: number; avgRating: number | null }
 interface SignatureFilm { film_id: string; title: string; poster_path: string | null; stars: number }
@@ -82,9 +83,25 @@ function TasteCodeDisplay({ code, prose, accentColor = 'var(--p-ink)', onViewFul
                     transition: 'all 120ms', gap: 4, padding: 0,
                   }}
                 >
-                  <span style={{ fontFamily: 'var(--serif-display)', fontSize: 38, fontWeight: 600, lineHeight: 1, color: isActive ? 'var(--paper)' : 'var(--ink)' }}>
-                    {entry.letter}
-                  </span>
+                  <div style={{ position: 'relative', display: 'inline-flex' }}>
+                    <span style={{ fontFamily: 'var(--serif-display)', fontSize: 38, fontWeight: 600, lineHeight: 1, color: isActive ? 'var(--paper)' : 'var(--ink)' }}>
+                      {entry.letter}
+                    </span>
+                    {!isActive && (() => {
+                      const tier = poleBadgeTier(entry.poleScore)
+                      return (
+                        <span style={{
+                          position: 'absolute', top: -5, right: -8,
+                          minWidth: 14, height: 14, borderRadius: 999,
+                          background: tier === 'H' ? 'var(--forest, #225533)' : tier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge, #ccc)',
+                          color: tier === 'L' ? 'var(--ink-3)' : '#fff',
+                          fontSize: 7, fontFamily: 'var(--mono)', fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          padding: '0 2px', pointerEvents: 'none', lineHeight: 1,
+                        }}>{tier}</span>
+                      )
+                    })()}
+                  </div>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.08em', textTransform: 'uppercase', color: isActive ? 'var(--paper-edge)' : 'var(--ink-4)' }}>
                     {entry.label}
                   </span>

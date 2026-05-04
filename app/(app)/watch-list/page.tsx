@@ -56,13 +56,20 @@ function WatchListCard({ entry, onOpen, onRemove, onStartWatching }: {
   )
 }
 
+type MediaFilter = 'all' | 'movie' | 'tv'
+
 export default function WatchListPage() {
   const router = useRouter()
   const isMobile = useIsMobile()
   const { data, mutate } = useSWR<LibraryData>('/api/library', fetcher)
-  const entries: LibraryEntry[] = data?.watchlist ?? []
+  const allEntries: LibraryEntry[] = data?.watchlist ?? []
   const loading = !data
   const [panel, setPanel] = useState<LibraryEntry | null>(null)
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
+
+  const entries = mediaFilter === 'all'
+    ? allEntries
+    : allEntries.filter(e => e.film?.kind === mediaFilter)
 
   const handleRemove = (id: string) => mutate(d => d ? { ...d, watchlist: d.watchlist.filter((e: LibraryEntry) => e.id !== id) } : d, false)
 
@@ -94,16 +101,49 @@ export default function WatchListPage() {
       )}
 
       <div style={{ padding: isMobile ? '28px 16px 96px' : '56px 64px', maxWidth: 860, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'baseline', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 40, gap: isMobile ? 16 : 0 }}>
+        <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'baseline', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', marginBottom: 32, gap: isMobile ? 16 : 0 }}>
           <div>
             <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>○ WATCH LIST</div>
             <h1 className="t-display" style={{ fontSize: isMobile ? 36 : 52, lineHeight: 1, margin: 0 }}>
-              films you want to <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--forest)' }}>see</span>.
+              things you want to <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--forest)' }}>watch</span>.
             </h1>
           </div>
           <button className="btn" onClick={() => router.push('/watch-list/save')} style={{ padding: '11px 20px', fontSize: 13, borderRadius: 999 }}>
-            + add a film
+            + add
           </button>
+        </div>
+
+        {/* Media type filter */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 28, alignItems: 'center' }}>
+          {([
+            { key: 'all'   as MediaFilter, label: 'all' },
+            { key: 'movie' as MediaFilter, label: 'films' },
+            { key: 'tv'    as MediaFilter, label: 'TV shows' },
+          ]).map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setMediaFilter(opt.key)}
+              style={{
+                padding: '5px 16px', borderRadius: 999, cursor: 'pointer',
+                border: mediaFilter === opt.key ? 'none' : '0.5px solid var(--paper-edge)',
+                background: mediaFilter === opt.key ? 'var(--ink)' : 'var(--paper-2)',
+                color: mediaFilter === opt.key ? 'var(--paper)' : 'var(--ink-3)',
+                fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.08em',
+                textTransform: 'uppercase', transition: 'all 100ms',
+              }}
+            >
+              {opt.label}
+              {mediaFilter !== opt.key && opt.key !== 'all' && (() => {
+                const n = allEntries.filter(e => e.film?.kind === opt.key).length
+                return n > 0 ? <span style={{ marginLeft: 6, opacity: 0.5 }}>{n}</span> : null
+              })()}
+            </button>
+          ))}
+          {!loading && (
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', marginLeft: 8 }}>
+              {entries.length} title{entries.length !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         {loading && (
@@ -115,10 +155,10 @@ export default function WatchListPage() {
             <div className="stamp" style={{ display: 'inline-block', marginBottom: 24 }}>empty</div>
             <p className="t-display" style={{ fontSize: 28, margin: '0 0 12px' }}>nothing saved yet.</p>
             <p style={{ fontStyle: 'italic', fontSize: 15, color: 'var(--ink-2)', fontFamily: 'var(--serif-italic)', marginBottom: 32 }}>
-              save films you want to watch — mood room can help you pick one.
+              save films and shows you want to watch — the mood room can help you pick.
             </p>
             <button className="btn" onClick={() => router.push('/watch-list/save')} style={{ padding: '12px 22px', fontSize: 14, borderRadius: 999 }}>
-              save a film →
+              add something →
             </button>
           </div>
         )}

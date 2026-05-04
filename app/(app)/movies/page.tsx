@@ -8,6 +8,7 @@ import { LibraryEntry, ReflectionResult, posterUrl } from '@/lib/types'
 import { fetcher } from '@/lib/fetcher'
 import { useIsMobile } from '@/lib/use-is-mobile'
 import Image from 'next/image'
+import { GENRE_GROUPS } from '@/lib/genre-groups'
 
 interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
 
@@ -102,7 +103,11 @@ export default function MoviesPage() {
   const [filterRating, setFilterRating] = useState('')
   const [filterDecade, setFilterDecade] = useState('')
   const [filterGenre, setFilterGenre] = useState('')
+  const [filterRewatch, setFilterRewatch] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>('added')
+  // Two-level genre filter
+  const [activeGroup, setActiveGroup] = useState<string | null>(null)
+  const [activeKeyword, setActiveKeyword] = useState<string | null>(null)
 
   const openDetail = async (entry: LibraryEntry) => {
     setDetailLoading(true)
@@ -123,11 +128,6 @@ export default function MoviesPage() {
   }
 
   // Derived filter options
-  const hasBothKinds = useMemo(() => {
-    const kinds = new Set(entries.map(e => e.film?.kind).filter(Boolean))
-    return kinds.has('movie') && kinds.has('tv')
-  }, [entries])
-
   const allGenres = useMemo(() => {
     const genreSet = new Map<string, number>()
     entries.forEach(e => {
@@ -164,7 +164,32 @@ export default function MoviesPage() {
       result = result.filter(e => e.film?.year != null && e.film.year >= decade && e.film.year < decade + 10)
     }
 
-    if (filterGenre) {
+    if (filterRewatch) result = result.filter(e => e.rewatch === true)
+
+    // Two-level genre filter (replaces old filterGenre)
+    if (activeKeyword) {
+      // Subgenre keyword selected — match against ai_brief.genres
+      const kw = activeKeyword.toLowerCase()
+      result = result.filter(e => {
+        const aiGenres: string[] = (e.film?.ai_brief?.genres ?? []) as string[]
+        return aiGenres.some(g => g.toLowerCase().includes(kw))
+      })
+    } else if (activeGroup) {
+      // Broad group selected — match TMDB genres OR ai_brief keywords
+      const group = GENRE_GROUPS.find(g => g.label === activeGroup)
+      if (group) {
+        const tmdbSet = new Set(group.tmdb as readonly string[])
+        const kwList = (group.keywords as readonly string[]).map(k => k.toLowerCase())
+        result = result.filter(e => {
+          const tmdbGenres: string[] = (e.film?.tmdb_genres ?? []) as string[]
+          const aiGenres: string[] = (e.film?.ai_brief?.genres ?? []) as string[]
+          const matchesTmdb = tmdbGenres.some(g => tmdbSet.has(g))
+          const matchesKw = aiGenres.some(g => kwList.some(k => g.toLowerCase().includes(k)))
+          return matchesTmdb || matchesKw
+        })
+      }
+    } else if (filterGenre) {
+      // Legacy fallback (unused when pills active, kept for safety)
       result = result.filter(e => e.film?.ai_brief?.genres?.includes(filterGenre) ?? false)
     }
 
@@ -174,16 +199,19 @@ export default function MoviesPage() {
     else if (sortBy === 'title') result.sort((a, b) => (a.film?.title ?? '').localeCompare(b.film?.title ?? ''))
 
     return result
-  }, [entries, kindFilter, filterRating, filterDecade, filterGenre, sortBy])
+  }, [entries, kindFilter, filterRating, filterDecade, filterGenre, filterRewatch, activeGroup, activeKeyword, sortBy])
 
-  const isFiltered = kindFilter !== 'all' || filterRating || filterDecade || filterGenre || sortBy !== 'added'
+  const isFiltered = kindFilter !== 'all' || filterRating || filterDecade || filterGenre || filterRewatch || activeGroup || activeKeyword || sortBy !== 'added'
 
   const clearFilters = () => {
     setKindFilter('all')
     setFilterRating('')
     setFilterDecade('')
     setFilterGenre('')
+    setFilterRewatch(false)
     setSortBy('added')
+    setActiveGroup(null)
+    setActiveKeyword(null)
   }
 
   return (
@@ -209,10 +237,21 @@ export default function MoviesPage() {
               {entries.length > 0 && <span style={{ fontFamily: 'var(--mono)', fontSize: isMobile ? 14 : 18, fontWeight: 400, color: 'var(--ink-3)', marginLeft: 16 }}>{entries.length}</span>}
             </h1>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {!isMobile && <button className="btn btn-soft" onClick={() => router.push('/import')} style={{ padding: '11px 20px', fontSize: 13, borderRadius: 999 }}>
               import from letterboxd
             </button>}
+            <button
+              onClick={() => router.push('/quick-rate')}
+              style={{
+                padding: '11px 20px', borderRadius: 999, cursor: 'pointer',
+                border: '0.5px solid var(--paper-edge)', background: 'var(--paper-2)',
+                fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--ink-3)',
+                letterSpacing: '0.06em',
+              }}
+            >
+              ★ quick rate
+            </button>
             <button className="btn" onClick={() => router.push('/add')} style={{ padding: '11px 20px', fontSize: 13, borderRadius: 999 }}>
               + log a film
             </button>
@@ -224,27 +263,40 @@ export default function MoviesPage() {
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, marginBottom: 32, flexWrap: 'wrap',
           }}>
-            {/* Kind tabs — only shown if library has both */}
-            {hasBothKinds && (
-              <div style={{ display: 'flex', border: '0.5px solid var(--paper-edge)', borderRadius: 7, overflow: 'hidden', marginRight: 8 }}>
-                {(['all', 'movie', 'tv'] as KindFilter[]).map(k => (
-                  <button
-                    key={k}
-                    onClick={() => setKindFilter(k)}
-                    style={{
-                      padding: '6px 12px',
-                      fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.06em',
-                      background: kindFilter === k ? 'var(--ink)' : 'var(--paper-2)',
-                      color: kindFilter === k ? 'var(--paper)' : 'var(--ink-3)',
-                      border: 'none', cursor: 'pointer',
-                      borderRight: k !== 'tv' ? '0.5px solid var(--paper-edge)' : 'none',
-                    }}
-                  >
-                    {k === 'all' ? 'ALL' : k === 'movie' ? 'FILMS' : 'TV'}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Kind tabs — always shown */}
+            <div style={{ display: 'flex', border: '0.5px solid var(--paper-edge)', borderRadius: 7, overflow: 'hidden', marginRight: 8 }}>
+              {(['all', 'movie', 'tv'] as KindFilter[]).map(k => (
+                <button
+                  key={k}
+                  onClick={() => setKindFilter(k)}
+                  style={{
+                    padding: '6px 12px',
+                    fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.06em',
+                    background: kindFilter === k ? 'var(--ink)' : 'var(--paper-2)',
+                    color: kindFilter === k ? 'var(--paper)' : 'var(--ink-3)',
+                    border: 'none', cursor: 'pointer',
+                    borderRight: k !== 'tv' ? '0.5px solid var(--paper-edge)' : 'none',
+                  }}
+                >
+                  {k === 'all' ? 'ALL' : k === 'movie' ? 'FILMS' : 'TV'}
+                </button>
+              ))}
+            </div>
+
+            {/* Rewatchable toggle */}
+            <button
+              onClick={() => setFilterRewatch(v => !v)}
+              style={{
+                padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                border: filterRewatch ? 'none' : '0.5px solid var(--paper-edge)',
+                background: filterRewatch ? 'var(--s-ink)' : 'var(--paper-2)',
+                color: filterRewatch ? '#fff' : 'var(--ink-3)',
+                fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.06em',
+                textTransform: 'uppercase', transition: 'all 100ms', flexShrink: 0,
+              }}
+            >
+              ↺ rewatchable
+            </button>
 
             <FilterSelect value={filterRating} onChange={setFilterRating}>
               <option value="">rating</option>
@@ -261,15 +313,6 @@ export default function MoviesPage() {
                 <option value="">decade</option>
                 {allDecades.map(d => (
                   <option key={d} value={String(d)}>{d}s</option>
-                ))}
-              </FilterSelect>
-            )}
-
-            {allGenres.length > 0 && (
-              <FilterSelect value={filterGenre} onChange={setFilterGenre}>
-                <option value="">genre</option>
-                {allGenres.map(g => (
-                  <option key={g} value={g}>{g}</option>
                 ))}
               </FilterSelect>
             )}
@@ -300,6 +343,72 @@ export default function MoviesPage() {
                 {filtered.length} of {entries.length}
               </span>
             )}
+          </div>
+        )}
+
+        {/* Two-level genre filter */}
+        {!loading && entries.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            {/* Row 1: broad category pills */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: activeGroup ? 10 : 0 }}>
+              {GENRE_GROUPS.map(group => {
+                const isActive = activeGroup === group.label
+                return (
+                  <button
+                    key={group.label}
+                    onClick={() => {
+                      if (isActive) { setActiveGroup(null); setActiveKeyword(null) }
+                      else { setActiveGroup(group.label); setActiveKeyword(null) }
+                    }}
+                    style={{
+                      padding: '6px 14px', borderRadius: 999, cursor: 'pointer',
+                      border: isActive ? 'none' : '0.5px solid var(--paper-edge)',
+                      background: isActive ? 'var(--ink)' : 'var(--paper-2)',
+                      color: isActive ? 'var(--paper)' : 'var(--ink-3)',
+                      fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.08em',
+                      textTransform: 'uppercase', transition: 'all 100ms',
+                    }}
+                  >
+                    {group.label}
+                  </button>
+                )
+              })}
+              {activeGroup && (
+                <button
+                  onClick={() => { setActiveGroup(null); setActiveKeyword(null) }}
+                  style={{ padding: '6px 10px', borderRadius: 999, cursor: 'pointer', border: 'none', background: 'none', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)' }}
+                >×</button>
+              )}
+            </div>
+
+            {/* Row 2: subgenre keyword chips */}
+            {activeGroup && (() => {
+              const group = GENRE_GROUPS.find(g => g.label === activeGroup)
+              if (!group) return null
+              return (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingLeft: 2 }}>
+                  {group.keywords.map(kw => {
+                    const isActive = activeKeyword === kw
+                    return (
+                      <button
+                        key={kw}
+                        onClick={() => setActiveKeyword(isActive ? null : kw)}
+                        style={{
+                          padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                          border: isActive ? 'none' : '0.5px solid var(--paper-edge)',
+                          background: isActive ? 'var(--s-ink)' : 'transparent',
+                          color: isActive ? '#fff' : 'var(--ink-4)',
+                          fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.06em',
+                          transition: 'all 80ms',
+                        }}
+                      >
+                        {kw}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         )}
 

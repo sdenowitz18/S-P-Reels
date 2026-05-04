@@ -62,6 +62,8 @@ export async function fetchFilm(kind: FilmKind, tmdbId: number): Promise<Film> {
     cast_json: cast,
     keywords,
     tmdb_genres,
+    tmdb_vote_average: data.vote_average ?? null,
+    tmdb_vote_count:   data.vote_count   ?? null,
     fetched_at: new Date().toISOString(),
   }
 }

@@ -44,7 +44,20 @@ export default function AddSearchPage() {
       </div>
 
       <div style={{ padding: '40px 64px', maxWidth: 880, margin: '0 auto' }}>
-        <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ LOG A FILM · STEP 1</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)' }}>★ LOG A FILM · STEP 1</div>
+          <button
+            onClick={() => router.push('/quick-rate')}
+            style={{
+              background: 'none', border: '0.5px solid var(--paper-edge)', borderRadius: 999,
+              padding: '6px 14px', cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)',
+              letterSpacing: '0.07em', textTransform: 'uppercase',
+            }}
+          >
+            ★ quick rate many films →
+          </button>
+        </div>
         <h1 className="t-display" style={{ fontSize: 56, lineHeight: 1, marginTop: 18 }}>
           which film are we <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--sun)' }}>sitting with</span>?
         </h1>

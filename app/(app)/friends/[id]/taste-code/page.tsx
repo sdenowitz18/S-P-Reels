@@ -4,6 +4,20 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteCode, TasteCodeEntry, TasteCodeFilm } from '@/lib/taste-code'
+import { TasteLetter, poleBadgeTier } from '@/components/taste-letter'
+
+function HmlBadge({ score }: { score: number }) {
+  const tier = poleBadgeTier(score)
+  return (
+    <span style={{
+      background: tier === 'H' ? 'var(--forest, #225533)' : tier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge, #ccc)',
+      color: tier === 'L' ? 'var(--ink-3)' : '#fff',
+      borderRadius: 999, padding: '1px 5px',
+      fontFamily: 'var(--mono)', fontSize: 7, fontWeight: 700, letterSpacing: '0.02em',
+      lineHeight: 1.6,
+    }}>{tier}</span>
+  )
+}
 
 // Signal strength thresholds — gap-based, not rank-based
 const STRONG_GAP   = 35
@@ -102,7 +116,7 @@ function DimRow({ entry, rank, accentColor }: {
           <div style={{ width: 100, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
             <div style={{ width: `${entry.poleScore}%`, height: '100%', background: accentColor, borderRadius: 999 }} />
           </div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>{entry.poleScore}</span>
+          <HmlBadge score={entry.poleScore} />
         </div>
         <PoleFilmStrip films={domFilmsDisplay} color={accentColor} align="left" />
         <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 8 }}>
@@ -129,7 +143,7 @@ function DimRow({ entry, rank, accentColor }: {
           <span style={{ fontFamily: 'var(--serif-display)', fontSize: 36, fontWeight: 600, lineHeight: 1, color: 'var(--ink-3)' }}>{entry.oppLetter}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>{entry.oppositeScore}</span>
+          <HmlBadge score={entry.oppositeScore} />
           <div style={{ width: 100, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
             <div style={{ width: `${entry.oppositeScore}%`, height: '100%', background: 'var(--ink-4)', borderRadius: 999 }} />
           </div>
@@ -208,9 +222,7 @@ export default function FriendTasteCodePage({ params }: { params: Promise<{ id: 
                 {firstName ? `${firstName.toUpperCase()}'S CODE` : 'THEIR CODE'}
               </span>
               {tasteCode.entries.map(e => (
-                <span key={e.letter} style={{ fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 600, color: 'var(--p-ink)', lineHeight: 1 }}>
-                  {e.letter}
-                </span>
+                <TasteLetter key={e.letter} letter={e.letter} poleScore={e.poleScore} size="md" />
               ))}
             </div>
 

@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteDimensions } from '@/lib/prompts/taste-profile'
 import { TasteCode, TasteCodeEntry, compareTaskCodes, POLE_BY_LETTER } from '@/lib/taste-code'
+import { poleBadgeTier } from '@/components/taste-letter'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,15 @@ const DIM_AXIS_LABEL: Record<string, string> = {
   behavioral_realism:      'Realistic ← → Archetypal',
   sensory_vs_intellectual: 'Gut ← → Mind',
   kinetic_vs_patient:      'Kinetic ← → Zen',
+}
+
+// ── Gap-based signal tier ─────────────────────────────────────────────────────
+
+const STRONG_GAP   = 35
+const MODERATE_GAP = 15
+
+function gapTierFor(gap: number): 'strong' | 'moderate' | 'weak' {
+  return gap >= STRONG_GAP ? 'strong' : gap >= MODERATE_GAP ? 'moderate' : 'weak'
 }
 
 // ── Score bar ─────────────────────────────────────────────────────────────────
@@ -236,18 +246,9 @@ function TasteCodeBlend({
   const myEntry    = expandedDimKey ? myAllEntries.find(e => e.dimKey === expandedDimKey) ?? null : null
   const theirEntry = expandedDimKey ? theirAllEntries.find(e => e.dimKey === expandedDimKey) ?? null : null
 
-  // Rank of selected dim in the other person's allEntries (0-indexed) → determines description tone
-  const theirRankForExpanded = expandedDimKey
-    ? theirAllEntries.findIndex(e => e.dimKey === expandedDimKey)
-    : -1
-  const theirTone: 'strong' | 'moderate' | 'weak' =
-    theirRankForExpanded < 4 ? 'strong' : theirRankForExpanded < 8 ? 'moderate' : 'weak'
-
-  const myRankForExpanded = expandedDimKey
-    ? myAllEntries.findIndex(e => e.dimKey === expandedDimKey)
-    : -1
-  const myTone: 'strong' | 'moderate' | 'weak' =
-    myRankForExpanded < 4 ? 'strong' : myRankForExpanded < 8 ? 'moderate' : 'weak'
+  // Tone derived from actual gap strength (not rank position)
+  const myTone: 'strong' | 'moderate' | 'weak' = myEntry ? gapTierFor(myEntry.gap) : 'weak'
+  const theirTone: 'strong' | 'moderate' | 'weak' = theirEntry ? gapTierFor(theirEntry.gap) : 'weak'
 
   // Description text based on tone + view
   // isDislikes → show negative prose about the OPPOSITE pole (what doesn't connect)
@@ -296,12 +297,10 @@ function TasteCodeBlend({
                     {view === 'dislikes' ? ghostEntry.oppLabel : ghostEntry.label}
                   </span>
                 </button>
+                {/* ghost tile intentionally has no H/M/L badge — it's a dim context indicator only */}
                 <div style={{ width: 52, height: 2, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{ width: `${view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}%`, height: '100%', background: 'var(--ink)', borderRadius: 999, opacity: 0.4 }} />
                 </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
-                  {view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}
-                </span>
               </div>
               <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--paper-edge)', margin: '0 4px' }} />
             </>
@@ -312,18 +311,38 @@ function TasteCodeBlend({
             // In DISLIKES mode, show the opposite pole's letter/label
             const tileLetter = view === 'dislikes' ? e.oppLetter : e.letter
             const tileLabel  = view === 'dislikes' ? e.oppLabel  : e.label
+            // Compat-based border (likes mode only)
+            const compatEntry = isMyRow
+              ? likesCompat.find(c => c.myEntry?.dimKey === e.dimKey)
+              : likesCompat.find(c => c.theirEntry?.dimKey === e.dimKey)
+            const bucket = compatEntry?.bucket ?? 'asymmetric'
+            const normalBorder = view === 'likes'
+              ? bucket === 'shared'   ? 'var(--forest)' :
+                bucket === 'opposing' ? '#c05040'        : 'var(--paper-edge)'
+              : 'var(--paper-edge)'
+            const badgeScore = view === 'dislikes' ? e.oppositeScore : e.poleScore
+            const tier = poleBadgeTier(badgeScore)
             return (
               <div key={e.dimKey} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
                 <button
                   onClick={() => setExpandedDimKey(prev => prev === e.dimKey ? null : e.dimKey)}
                   style={{
                     width: 72, height: 72, borderRadius: 10, cursor: 'pointer',
-                    border: `2px solid ${isSelected ? 'var(--ink)' : 'var(--paper-edge)'}`,
+                    border: `2px solid ${isSelected ? 'var(--ink)' : normalBorder}`,
                     background: isSelected ? 'var(--ink)' : 'transparent',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
-                    transition: 'all 120ms',
+                    transition: 'all 120ms', position: 'relative',
                   }}
                 >
+                  <span style={{
+                    position: 'absolute', top: -5, right: -5,
+                    minWidth: 14, height: 14, borderRadius: 999,
+                    background: isSelected ? 'rgba(255,255,255,0.9)' : (tier === 'H' ? 'var(--forest, #225533)' : tier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge, #ccc)'),
+                    color: isSelected ? 'var(--ink)' : (tier === 'L' ? 'var(--ink-3)' : '#fff'),
+                    fontSize: 7, fontFamily: 'var(--mono)', fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '0 2px', pointerEvents: 'none', lineHeight: 1, zIndex: 1,
+                  }}>{tier}</span>
                   <span style={{ fontFamily: 'var(--serif-display)', fontSize: 30, fontWeight: 600, lineHeight: 1, color: isSelected ? 'var(--paper)' : color }}>
                     {tileLetter}
                   </span>
@@ -334,9 +353,6 @@ function TasteCodeBlend({
                 <div style={{ width: 52, height: 2, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{ width: `${view === 'dislikes' ? e.oppositeScore : e.gap}%`, height: '100%', background: isSelected ? 'var(--ink)' : color, borderRadius: 999, transition: 'all 120ms', opacity: isSelected ? 1 : 0.5 }} />
                 </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
-                  {view === 'dislikes' ? e.oppositeScore : e.gap}
-                </span>
               </div>
             )
           })}
@@ -362,12 +378,10 @@ function TasteCodeBlend({
                     {view === 'dislikes' ? ghostEntry.oppLabel : ghostEntry.label}
                   </span>
                 </button>
+                {/* ghost tile intentionally has no H/M/L badge — it's a dim context indicator only */}
                 <div style={{ width: 52, height: 2, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{ width: `${view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}%`, height: '100%', background: 'var(--ink)', borderRadius: 999, opacity: 0.4 }} />
                 </div>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
-                  {view === 'dislikes' ? ghostEntry.oppositeScore : ghostEntry.gap}
-                </span>
               </div>
             </>
           )}
@@ -423,11 +437,17 @@ function TasteCodeBlend({
                 ? (myEntry.pole === 'left' ? 'right' : 'left')
                 : null
 
-            // Header prefix — encodes signal strength into lean intensity
-            function leanPrefix(tone: 'strong' | 'moderate' | 'weak'): string {
-              if (tone === 'strong') return 'LEANS HEAVILY'
-              if (tone === 'moderate') return 'LEANS'
-              return 'LEANS SLIGHTLY'
+            // Header prefix — encodes signal strength + lean direction
+            function leanPrefix(tone: 'strong' | 'moderate' | 'weak', leanToward: boolean): string {
+              if (leanToward) {
+                if (tone === 'strong') return 'LEANS HEAVILY'
+                if (tone === 'moderate') return 'LEANS'
+                return 'LEANS SLIGHTLY'
+              } else {
+                if (tone === 'strong') return 'AVOIDS'
+                if (tone === 'moderate') return 'PULLS AWAY FROM'
+                return 'SLIGHTLY AVOIDS'
+              }
             }
 
             const sides = [
@@ -454,7 +474,7 @@ function TasteCodeBlend({
                     : entry?.label ?? ''
 
                   const headerSuffix = poleLabel
-                    ? ` — ${leanPrefix(tone)} ${poleLabel.toUpperCase()}`
+                    ? ` — ${leanPrefix(tone, leanToward)} ${poleLabel.toUpperCase()}`
                     : ''
 
                   // Prose: based on lean direction and signal strength

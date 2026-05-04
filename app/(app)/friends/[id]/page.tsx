@@ -623,7 +623,7 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
                         const borderColor = bucket === 'shared' ? 'var(--forest)' : bucket === 'opposing' ? '#c05040' : 'var(--paper-edge)'
                         const textColor   = bucket === 'asymmetric' ? 'var(--ink-4)' : 'var(--s-ink)'
                         return (
-                          <div key={e.letter} style={{ width: 36, height: 36, borderRadius: 6, border: `1.5px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <div key={e.letter} style={{ width: 36, height: 36, borderRadius: 6, border: `1.5px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <span style={{ fontFamily: 'var(--serif-display)', fontSize: 16, fontWeight: 600, color: textColor }}>{e.letter}</span>
                           </div>
                         )
@@ -668,7 +668,7 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
                         const borderColor = bucket === 'shared' ? 'var(--forest)' : bucket === 'opposing' ? '#c05040' : 'var(--paper-edge)'
                         const textColor   = bucket === 'asymmetric' ? 'var(--ink-4)' : 'var(--p-ink)'
                         return (
-                          <div key={e.letter} style={{ width: 36, height: 36, borderRadius: 6, border: `1.5px solid ${borderColor}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <div key={e.letter} style={{ width: 36, height: 36, borderRadius: 6, border: `1.5px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <span style={{ fontFamily: 'var(--serif-display)', fontSize: 16, fontWeight: 600, color: textColor }}>{e.letter}</span>
                           </div>
                         )

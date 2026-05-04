@@ -115,7 +115,7 @@ export default function HomePage() {
             tag="01 · log"
             title="log something i've watched"
             sub="a film or show — finished or mid-reel, we'll route it the right way."
-            cta="open the room  →"
+            cta="log a film →"
             onClick={() => router.push('/add')}
             tint="var(--sun-tint)" ink="var(--sun)" paper="var(--bone)"
           />

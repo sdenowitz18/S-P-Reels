@@ -345,6 +345,49 @@ export default function ImportPage() {
         {/* Upload phase */}
         {phase === 'upload' && (
           <div>
+            {/* Orientation — explain what happens to their data */}
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 0,
+              border: '0.5px solid var(--paper-edge)', borderRadius: 12,
+              overflow: 'hidden', marginBottom: 32,
+            }}>
+              {[
+                {
+                  icon: '◈',
+                  title: 'your ratings build your taste profile',
+                  body: 'we read the patterns across films you loved, liked, and didn\'t connect with to map your cinematic preferences across 12 dimensions.',
+                },
+                {
+                  icon: '★',
+                  title: 'only starred films count toward your profile',
+                  body: 'films you\'ve logged without a rating are added to your history but don\'t shape your taste code — which keeps your profile accurate.',
+                },
+                {
+                  icon: '↻',
+                  title: 'your profile sharpens as you keep logging',
+                  body: 'importing is just the start. every film you rate after import continues to refine your taste code.',
+                },
+              ].map((item, i) => (
+                <div key={i} style={{
+                  display: 'flex', gap: 16, padding: '16px 20px',
+                  borderBottom: i < 2 ? '0.5px solid var(--paper-edge)' : 'none',
+                  background: i % 2 === 0 ? 'var(--paper)' : 'var(--paper-2)',
+                }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink-3)', width: 20, flexShrink: 0, paddingTop: 2 }}>
+                    {item.icon}
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: 'var(--serif-display)', fontSize: 13, fontWeight: 500, marginBottom: 4, lineHeight: 1.3 }}>
+                      {item.title}
+                    </div>
+                    <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                      {item.body}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <div
               onDrop={handleDrop}
               onDragOver={e => e.preventDefault()}

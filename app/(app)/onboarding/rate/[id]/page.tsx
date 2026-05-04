@@ -331,6 +331,7 @@ export default function RatePage() {
   const router = useRouter()
   const id     = params.id as string
 
+  const [showIntro,  setShowIntro]  = useState(true)   // orientation screen before first film
   const [filmIndex,  setFilmIndex]  = useState(0)
   const [ratings,    setRatings]    = useState<Record<string, number>>({})
   const [loading,    setLoading]    = useState(true)
@@ -369,6 +370,9 @@ export default function RatePage() {
           if (e.type === 'calibration_rating') existing[e.film_id] = e.stars
         }
         setRatings(existing)
+
+        // Skip intro if the user is resuming (they've already rated some films)
+        if (Object.keys(existing).length > 0) setShowIntro(false)
 
         const firstUnrated = films.findIndex(f => !(f.tmdb_id in existing))
         setFilmIndex(firstUnrated >= 0 ? firstUnrated : total)
@@ -514,6 +518,74 @@ export default function RatePage() {
     )
   }
 
+  // ── Orientation screen (first-time users only) ─────────────────────────────
+  if (showIntro) {
+    return (
+      <AppShell withAdd={false}>
+        <div style={{ padding: 'clamp(32px,6vw,72px) clamp(20px,6vw,72px)', maxWidth: 560, margin: '0 auto' }}>
+          <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 16, letterSpacing: '0.12em' }}>★ TASTE SETUP</div>
+
+          <h1 className="t-display" style={{ fontSize: 'clamp(30px,5vw,44px)', lineHeight: 1.1, marginBottom: 20 }}>
+            before we start
+          </h1>
+
+          <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 15, color: 'var(--ink-2)', lineHeight: 1.7, margin: '0 0 36px' }}>
+            we'll show you films one at a time. rate each one and we'll use your reactions to map your taste across 12 cinematic dimensions.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '0.5px solid var(--paper-edge)', borderRadius: 12, overflow: 'hidden', marginBottom: 36 }}>
+            {[
+              {
+                icon: '★',
+                title: 'only rate films you remember and feel strongly about',
+                body: 'a hazy memory or a neutral feeling doesn\'t tell us much. if you can\'t recall how you felt, skip it.',
+              },
+              {
+                icon: '◻',
+                title: 'don\'t rate films you haven\'t seen',
+                body: 'even one wrong rating can pull your profile in the wrong direction. skip is always the right call when in doubt.',
+              },
+              {
+                icon: '↻',
+                title: 'your profile improves over time',
+                body: 'every film you log after setup continues to sharpen your taste code. the first 15–20 films build the foundation.',
+              },
+            ].map((item, i) => (
+              <div key={i} style={{
+                display: 'flex', gap: 16, padding: '18px 20px',
+                borderBottom: i < 2 ? '0.5px solid var(--paper-edge)' : 'none',
+                background: i % 2 === 0 ? 'var(--paper)' : 'var(--paper-2)',
+              }}>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--ink-3)', width: 20, flexShrink: 0, paddingTop: 2 }}>
+                  {item.icon}
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500, marginBottom: 5, lineHeight: 1.3 }}>
+                    {item.title}
+                  </div>
+                  <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                    {item.body}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setShowIntro(false)}
+            style={{
+              padding: '13px 32px', borderRadius: 999, cursor: 'pointer',
+              border: 'none', background: 'var(--ink)', color: 'var(--paper)',
+              fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500,
+            }}
+          >
+            start rating →
+          </button>
+        </div>
+      </AppShell>
+    )
+  }
+
   if (finalizing) {
     return (
       <AppShell withAdd={false}>
@@ -618,7 +690,7 @@ export default function RatePage() {
         {currentFilm && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
             <StarRating onRate={advance} disabled={submitting} />
-            <div style={{ marginTop: 12, borderTop: '0.5px solid var(--paper-edge)', paddingTop: 10, width: '100%', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ marginTop: 12, borderTop: '0.5px solid var(--paper-edge)', paddingTop: 10, width: '100%', display: 'flex', justifyContent: 'center', gap: 20, alignItems: 'center' }}>
               <button
                 onClick={() => advance(0)}
                 disabled={submitting}
@@ -632,7 +704,23 @@ export default function RatePage() {
                 onMouseEnter={e => { if (!submitting) (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-2)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)' }}
               >
-                haven&apos;t seen →
+                haven&apos;t seen it
+              </button>
+              <span style={{ color: 'var(--paper-edge)', fontSize: 13, userSelect: 'none' }}>·</span>
+              <button
+                onClick={() => advance(0)}
+                disabled={submitting}
+                style={{
+                  background: 'none', border: 'none',
+                  cursor:     submitting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                  fontSize:   13, color: 'var(--ink-4)', padding: '4px 0',
+                  opacity:    submitting ? 0.3 : 0.7, transition: 'color 120ms, opacity 120ms',
+                }}
+                onMouseEnter={e => { if (!submitting) { (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-2)'; (e.currentTarget as HTMLButtonElement).style.opacity = '1' } }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--ink-4)'; (e.currentTarget as HTMLButtonElement).style.opacity = '0.7' }}
+              >
+                skip for now
               </button>
             </div>
           </div>

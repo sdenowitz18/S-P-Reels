@@ -7,10 +7,11 @@ import { FilmDetailPanel } from '@/components/film-detail-panel'
 import { TasteDimensions } from '@/lib/prompts/taste-profile'
 import { LibraryEntry } from '@/lib/types'
 import { TasteCode, TasteCodeEntry } from '@/lib/taste-code'
+import { poleBadgeTier } from '@/components/taste-letter'
 
 interface GenreEntry { label: string; score: number; count: number; avgRating: number | null }
 interface SignatureFilm { film_id: string; title: string; poster_path: string | null; stars: number }
-interface TopFilm { film_id: string; title: string; poster_path: string | null; year: number | null; director: string | null; stars: number }
+interface TopFilm { film_id: string; title: string; poster_path: string | null; year: number | null; director: string | null; kind: 'movie' | 'tv'; stars: number }
 interface DirectorEntry { name: string; count: number; avgRating: number | null }
 interface ActorEntry { name: string; count: number; avgRating: number | null }
 interface DecadeEntry { decade: number; count: number; avgRating: number | null }
@@ -294,9 +295,24 @@ function TasteCodeDisplay({ code, prose, accentColor = 'var(--s-ink)', onViewFul
                       border: `0.5px solid ${isActive ? 'var(--ink)' : 'var(--paper-edge)'}`,
                       borderRadius: 10, width: 76, height: 76, cursor: 'pointer',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      transition: 'all 120ms', gap: 4, padding: 0,
+                      transition: 'all 120ms', gap: 4, padding: 0, position: 'relative',
                     }}
                   >
+                    {(() => {
+                      const badgeScore = view === 'dislikes' ? entry.oppositeScore : entry.poleScore
+                      const tier = poleBadgeTier(badgeScore)
+                      return (
+                        <span style={{
+                          position: 'absolute', top: -5, right: -5,
+                          minWidth: 14, height: 14, borderRadius: 999,
+                          background: tier === 'H' ? 'var(--forest, #225533)' : tier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge, #ccc)',
+                          color: tier === 'L' ? 'var(--ink-3)' : '#fff',
+                          fontSize: 7, fontFamily: 'var(--mono)', fontWeight: 700,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          padding: '0 2px', pointerEvents: 'none', lineHeight: 1,
+                        }}>{tier}</span>
+                      )
+                    })()}
                     <span style={{ fontFamily: 'var(--serif-display)', fontSize: 38, fontWeight: 600, lineHeight: 1, color: isActive ? 'var(--paper)' : 'var(--ink)' }}>
                       {displayLetter(entry)}
                     </span>
@@ -306,9 +322,6 @@ function TasteCodeDisplay({ code, prose, accentColor = 'var(--s-ink)', onViewFul
                   </button>
                   <div style={{ width: 76, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
                     <div style={{ width: `${strength}%`, height: '100%', background: isActive ? 'var(--ink)' : accentColor, borderRadius: 999, transition: 'all 120ms' }} />
-                  </div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
-                    {strength}
                   </div>
                   {films.length > 0 && (
                     <div style={{ display: 'flex', gap: 3, marginTop: 2 }}>
@@ -417,6 +430,84 @@ function TasteCodeDisplay({ code, prose, accentColor = 'var(--s-ink)', onViewFul
             </>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function TopRatedSection({ topRated, showTabs, libraryFilms, openFilmDetail, detailLoading }: {
+  topRated: TopFilm[]
+  showTabs: boolean
+  libraryFilms: LibraryFilm[]
+  openFilmDetail: (entryId: string) => void
+  detailLoading: boolean
+}) {
+  const [tab, setTab] = useState<'movie' | 'tv'>('movie')
+  const filtered = showTabs ? topRated.filter(f => f.kind === tab) : topRated
+  const display  = filtered.slice(0, 6)
+
+  return (
+    <div style={{ marginBottom: 72 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, gap: 12, flexWrap: 'wrap' }}>
+        <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)' }}>★ TOP RATED</div>
+        {showTabs && (
+          <div style={{ display: 'flex', border: '0.5px solid var(--paper-edge)', borderRadius: 6, overflow: 'hidden' }}>
+            {(['movie', 'tv'] as const).map(k => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                style={{
+                  padding: '4px 12px',
+                  fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.06em',
+                  background: tab === k ? 'var(--ink)' : 'var(--paper-2)',
+                  color: tab === k ? 'var(--paper)' : 'var(--ink-3)',
+                  border: 'none', cursor: 'pointer',
+                  borderRight: k === 'movie' ? '0.5px solid var(--paper-edge)' : 'none',
+                }}
+              >
+                {k === 'movie' ? 'FILMS' : 'TV'}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)', margin: '0 0 18px' }}>
+        {showTabs ? (tab === 'movie' ? 'your highest-rated films' : 'your highest-rated shows') : 'your highest-rated films & shows'}
+      </p>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {display.length === 0 ? (
+          <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
+            {tab === 'tv' ? 'no TV shows logged yet — they\'ll appear here once you watch and rate some.' : 'no films logged yet.'}
+          </p>
+        ) : display.map(f => {
+          const lf = libraryFilms.find(x => x.film_id === f.film_id)
+          return (
+            <button
+              key={f.film_id}
+              onClick={() => lf && openFilmDetail(lf.entry_id)}
+              disabled={!lf || detailLoading}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: lf ? 'pointer' : 'default', textAlign: 'center' }}
+            >
+              <div style={{
+                width: 80, height: 120, borderRadius: 5, overflow: 'hidden',
+                background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)',
+                position: 'relative', marginBottom: 6, transition: 'opacity 120ms',
+              }}
+                onMouseEnter={e => lf && ((e.currentTarget as HTMLElement).style.opacity = '0.75')}
+                onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+              >
+                {f.poster_path
+                  ? <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6, fontSize: 8, fontFamily: 'var(--mono)', color: 'var(--ink-4)', textAlign: 'center' }}>{f.title.toUpperCase()}</div>
+                }
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', marginBottom: 2 }}>{f.year}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--s-ink)', letterSpacing: '0.04em' }}>
+                {f.stars.toFixed(1)}★
+              </div>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -613,21 +704,21 @@ export default function ProfilePage() {
               }
             </h1>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, paddingBottom: 6 }}>
-              {/* Taste code badge — just the letters, decorative */}
-              {!loading && taste?.tasteCode && (
-                <div style={{ display: 'flex', gap: 4, alignItems: 'baseline' }}>
-                  {taste.tasteCode.entries.map(e => (
-                    <span key={e.dimKey} style={{
-                      fontFamily: 'var(--serif-display)',
-                      fontSize: 28, fontWeight: 600,
-                      lineHeight: 1, color: 'var(--ink)',
-                      letterSpacing: '-0.01em',
-                    }}>
-                      {e.letter}
-                    </span>
-                  ))}
-                </div>
+              {/* Quick Rate button */}
+              {!loading && (
+                <button
+                  onClick={() => router.push('/quick-rate')}
+                  style={{
+                    padding: '7px 16px', borderRadius: 999, cursor: 'pointer',
+                    border: '0.5px solid var(--paper-edge)', background: 'var(--paper-2)',
+                    fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-3)',
+                    letterSpacing: '0.07em', textTransform: 'uppercase',
+                  }}
+                >
+                  ★ quick rate
+                </button>
               )}
+              {/* Taste code badge — just the letters, decorative */}
               {/* Reveal link — always visible */}
               {!loading && (
                 <button
@@ -781,45 +872,20 @@ export default function ProfilePage() {
             )}
 
             {/* ── SECTION 4: Top Rated ────────────────────────────────────── */}
-            {taste.topRated.length > 0 && (
-              <div style={{ marginBottom: 72 }}>
-                <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 4 }}>★ TOP RATED</div>
-                <p style={{ fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)', margin: '0 0 18px' }}>
-                  your highest-rated films
-                </p>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                  {taste.topRated.map(f => {
-                    const lf = taste.libraryFilms.find(x => x.film_id === f.film_id)
-                    return (
-                      <button
-                        key={f.film_id}
-                        onClick={() => lf && openFilmDetail(lf.entry_id)}
-                        disabled={!lf || detailLoading}
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: lf ? 'pointer' : 'default', textAlign: 'center' }}
-                      >
-                        <div style={{
-                          width: 80, height: 120, borderRadius: 5, overflow: 'hidden',
-                          background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)',
-                          position: 'relative', marginBottom: 6, transition: 'opacity 120ms',
-                        }}
-                          onMouseEnter={e => lf && ((e.currentTarget as HTMLElement).style.opacity = '0.75')}
-                          onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
-                        >
-                          {f.poster_path
-                            ? <Image src={f.poster_path} alt={f.title} fill style={{ objectFit: 'cover' }} />
-                            : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6, fontSize: 8, fontFamily: 'var(--mono)', color: 'var(--ink-4)', textAlign: 'center' }}>{f.title.toUpperCase()}</div>
-                          }
-                        </div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', marginBottom: 2 }}>{f.year}</div>
-                        <div style={{ fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--s-ink)', letterSpacing: '0.04em' }}>
-                          {f.stars.toFixed(1)}★
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+            {taste.topRated.length > 0 && (() => {
+              const hasMovies = taste.topRated.some(f => f.kind === 'movie')
+              const hasTv     = taste.topRated.some(f => f.kind === 'tv')
+              const showTabs  = hasMovies && hasTv
+              return (
+                <TopRatedSection
+                  topRated={taste.topRated}
+                  showTabs={showTabs}
+                  libraryFilms={taste.libraryFilms}
+                  openFilmDetail={openFilmDetail}
+                  detailLoading={detailLoading}
+                />
+              )
+            })()}
 
             {/* ── BOTTOM: Generate briefs nudge ───────────────────────────── */}
             {!briefsDone && (taste.filmCount ?? 0) > (taste.ratedCount ?? 0) + 2 && (

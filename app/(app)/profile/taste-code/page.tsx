@@ -4,12 +4,42 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteCode, TasteCodeEntry, TasteCodeFilm } from '@/lib/taste-code'
+import { TasteLetter, poleBadgeTier } from '@/components/taste-letter'
+
+function HmlBadge({ score }: { score: number }) {
+  const tier = poleBadgeTier(score)
+  return (
+    <span style={{
+      background: tier === 'H' ? 'var(--forest, #225533)' : tier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge, #ccc)',
+      color: tier === 'L' ? 'var(--ink-3)' : '#fff',
+      borderRadius: 999, padding: '1px 5px',
+      fontFamily: 'var(--mono)', fontSize: 7, fontWeight: 700, letterSpacing: '0.02em',
+      lineHeight: 1.6,
+    }}>{tier}</span>
+  )
+}
 
 // Signal strength thresholds — based on actual gap (0–100), not rank position.
 // Gap = |domScore − oppScore| after library-range normalization.
 // Someone CAN have 12 strong signals or 12 weak ones — rank doesn't determine tier.
 const STRONG_GAP   = 35  // gap ≥ 35 → strong signal
 const MODERATE_GAP = 15  // gap ≥ 15 → moderate; below = no clear preference
+
+// Human-readable names for each dimension (always pole-order neutral)
+const DIM_DISPLAY_NAME: Record<string, string> = {
+  narrative_legibility:     'Narrative Legibility',
+  emotional_directness:     'Emotional Directness',
+  plot_vs_character:        'Plot vs. Character',
+  naturalistic_vs_stylized: 'Naturalistic vs. Stylized',
+  narrative_closure:        'Narrative Closure',
+  intimate_vs_epic:         'Intimate vs. Epic',
+  accessible_vs_demanding:  'Accessible vs. Demanding',
+  psychological_safety:     'Psychological Safety',
+  moral_clarity:            'Moral Clarity',
+  behavioral_realism:       'Behavioral Realism',
+  sensory_vs_intellectual:  'Sensory vs. Intellectual',
+  kinetic_vs_patient:       'Kinetic vs. Patient',
+}
 
 function signalTierFor(gap: number): 'strong' | 'moderate' | 'weak' {
   return gap >= STRONG_GAP ? 'strong' : gap >= MODERATE_GAP ? 'moderate' : 'weak'
@@ -134,7 +164,7 @@ function DimRow({ entry, rank, accentColor }: {
           <div style={{ width: 100, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
             <div style={{ width: `${entry.poleScore}%`, height: '100%', background: accentColor, borderRadius: 999 }} />
           </div>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>{entry.poleScore}</span>
+          <HmlBadge score={entry.poleScore} />
         </div>
         <PoleFilmStrip films={domFilmsDisplay} color={accentColor} align="left" />
         <div style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em', marginTop: 8 }}>
@@ -142,8 +172,11 @@ function DimRow({ entry, rank, accentColor }: {
         </div>
       </div>
 
-      {/* Middle: prose */}
+      {/* Middle: dimension name + prose */}
       <div>
+        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6, lineHeight: 1.2 }}>
+          {DIM_DISPLAY_NAME[entry.dimKey] ?? entry.dimKey}
+        </div>
         {signalTier !== 'strong' && (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.1em', color: 'var(--ink-4)', marginBottom: 8 }}>
             {signalTier === 'moderate' ? 'MODERATE SIGNAL' : 'NO CLEAR PREFERENCE'}
@@ -170,7 +203,7 @@ function DimRow({ entry, rank, accentColor }: {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>{entry.oppositeScore}</span>
+          <HmlBadge score={entry.oppositeScore} />
           <div style={{ width: 100, height: 3, background: 'var(--paper-edge)', borderRadius: 999, overflow: 'hidden' }}>
             <div style={{ width: `${entry.oppositeScore}%`, height: '100%', background: 'var(--ink-4)', borderRadius: 999 }} />
           </div>
@@ -190,6 +223,7 @@ export default function MyTasteCodePage() {
   const [name, setName] = useState('')
   const [tasteCode, setTasteCode] = useState<TasteCode | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tierFilter, setTierFilter] = useState<'strong' | 'moderate' | 'weak' | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -274,71 +308,74 @@ export default function MyTasteCodePage() {
             ))
           }
 
+          const filteredEntries = tierFilter
+            ? allEntries.filter(e => signalTierFor(e.gap) === tierFilter)
+            : allEntries
+
           return (
           <div>
-            {/* Identity code badge + confidence dots */}
-            <div style={{ marginBottom: 32 }}>
-              <div style={{
-                display: 'inline-flex', gap: 0, alignItems: 'flex-end',
-                padding: '12px 18px 14px', background: 'var(--paper-2)',
-                border: '0.5px solid var(--paper-edge)', borderRadius: 12,
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginRight: 16 }}>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>YOUR CODE</span>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.08em' }}>CONFIDENCE</span>
-                </div>
-                {tasteCode.entries.map(e => {
-                  const tier = signalTierFor(e.gap)
-                  return (
-                    <div key={e.letter} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, marginRight: 14 }}>
-                      <span style={{ fontFamily: 'var(--serif-display)', fontSize: 24, fontWeight: 600, color: 'var(--s-ink)', lineHeight: 1 }}>
-                        {e.letter}
-                      </span>
-                      <span style={{ display: 'flex', alignItems: 'center' }}>
-                        {tierDots(tier)}
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Profile confidence overview */}
+            {/* Profile confidence + filter */}
             <div style={{
               padding: '18px 20px',
               background: 'var(--paper-2)',
               border: '0.5px solid var(--paper-edge)',
               borderRadius: 10,
-              marginBottom: 20,
+              marginBottom: 32,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 14, flexWrap: 'wrap' }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', marginRight: 10 }}>
                   PROFILE CONFIDENCE
                 </span>
-                {[
-                  { count: strongCount,   label: 'strong',    color: 'rgba(74,107,62,0.85)' },
-                  { count: moderateCount, label: 'moderate',  color: 'rgba(190,150,60,0.85)' },
-                  { count: weakCount,     label: 'unclear',   color: 'rgba(160,80,60,0.6)'  },
-                ].map(({ count, label, color }) => (
-                  <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontFamily: 'var(--serif-display)', fontSize: 17, fontWeight: 600, color }}>{count}</span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>{label}</span>
-                  </span>
-                ))}
+                {([
+                  { tier: 'strong'   as const, count: strongCount,   label: 'strong',   activeColor: 'rgba(74,107,62,1)',    activeBg: 'rgba(74,107,62,0.12)'   },
+                  { tier: 'moderate' as const, count: moderateCount, label: 'moderate', activeColor: 'rgba(190,150,60,1)',   activeBg: 'rgba(190,150,60,0.12)'  },
+                  { tier: 'weak'     as const, count: weakCount,     label: 'unclear',  activeColor: 'rgba(160,80,60,0.9)', activeBg: 'rgba(160,80,60,0.1)'   },
+                ]).map(({ tier, count, label, activeColor, activeBg }) => {
+                  const isActive = tierFilter === tier
+                  return (
+                    <button
+                      key={tier}
+                      onClick={() => setTierFilter(isActive ? null : tier)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        background: isActive ? activeBg : 'transparent',
+                        border: isActive ? `1px solid ${activeColor}` : '1px solid transparent',
+                        borderRadius: 999, padding: '4px 10px', cursor: 'pointer',
+                        transition: 'all 120ms',
+                      }}
+                    >
+                      <span style={{ fontFamily: 'var(--serif-display)', fontSize: 15, fontWeight: 600, color: activeColor, lineHeight: 1 }}>
+                        {count}
+                      </span>
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: isActive ? activeColor : 'var(--ink-4)', letterSpacing: '0.06em' }}>
+                        {label}
+                      </span>
+                    </button>
+                  )
+                })}
+                {tierFilter && (
+                  <button
+                    onClick={() => setTierFilter(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.06em', padding: '4px 6px', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                  >
+                    clear
+                  </button>
+                )}
               </div>
 
               {/* 12-dot strip — one per dimension, ordered by signal strength */}
-              <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 10 }}>
-                {allEntries.map((e, i) => {
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginBottom: 8 }}>
+                {allEntries.map((e) => {
                   const tier = signalTierFor(e.gap)
+                  const isHighlighted = !tierFilter || tierFilter === tier
                   return (
                     <div
                       key={e.dimKey}
-                      title={`${e.label} — ${tier} signal (gap ${e.gap})`}
+                      title={`${e.label} — ${tier} signal`}
                       style={{
                         flex: 1, height: 6, borderRadius: 3,
                         background: tierColor(tier),
-                        opacity: tier === 'weak' ? 0.35 : tier === 'moderate' ? 0.65 : 1,
+                        opacity: isHighlighted ? (tier === 'weak' ? 0.45 : tier === 'moderate' ? 0.75 : 1) : 0.15,
                         transition: 'opacity 200ms',
                       }}
                     />
@@ -346,16 +383,12 @@ export default function MyTasteCodePage() {
                 })}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
-                  strongest →
-                </span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
-                  → weakest
-                </span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>strongest →</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>→ weakest</span>
               </div>
 
               {/* Nudge if fewer than 4 strong signals */}
-              {strongCount < 4 && (
+              {strongCount < 4 && !tierFilter && (
                 <p style={{
                   marginTop: 14, marginBottom: 0,
                   fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
@@ -370,49 +403,17 @@ export default function MyTasteCodePage() {
               )}
             </div>
 
-            {/* Signal legend — mirrors DimRow visual language */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', marginBottom: 48 }}>
-              {([
-                {
-                  border: 'rgba(74, 107, 62, 0.4)',
-                  bg:     'rgba(74, 107, 62, 0.04)',
-                  label:  'STRONG SIGNAL',
-                  prose:  'Your ratings pull clearly toward one end — a genuine, recurring preference that shows up across your library.',
-                },
-                {
-                  border: 'rgba(190, 150, 60, 0.45)',
-                  bg:     'rgba(190, 150, 60, 0.035)',
-                  label:  'MODERATE SIGNAL',
-                  prose:  'A real lean shows up in your ratings, but not consistently enough to be a defining trait.',
-                },
-                {
-                  border: 'rgba(160, 80, 60, 0.4)',
-                  bg:     'rgba(160, 80, 60, 0.04)',
-                  label:  'NO CLEAR PREFERENCE',
-                  prose:  'Your ratings don\'t separate these films — you respond to both poles about equally.',
-                },
-              ] as const).map(({ border, bg, label, prose }) => (
-                <div key={label} style={{
-                  borderLeft: `3px solid ${border}`,
-                  background: bg,
-                  padding: '16px 20px',
-                }}>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.1em', color: 'var(--ink-3)', marginBottom: 8 }}>
-                    {label}
-                  </div>
-                  <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, lineHeight: 1.6, color: 'var(--ink-4)', margin: 0 }}>
-                    {prose}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {/* All 12 dimensions */}
-            {allEntries.map((entry, i) => (
+            {/* Dimensions — filtered by signal tier when a filter is active */}
+            {tierFilter && (
+              <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', margin: '0 0 20px', lineHeight: 1.5 }}>
+                showing {filteredEntries.length} {tierFilter === 'weak' ? 'unclear' : tierFilter} dimension{filteredEntries.length !== 1 ? 's' : ''} — tap a count above to change the filter.
+              </p>
+            )}
+            {filteredEntries.map((entry) => (
               <DimRow
                 key={entry.dimKey}
                 entry={entry}
-                rank={i + 1}
+                rank={allEntries.indexOf(entry) + 1}
                 accentColor="var(--s-ink)"
               />
             ))}

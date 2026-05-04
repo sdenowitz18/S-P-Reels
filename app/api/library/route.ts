@@ -35,7 +35,15 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { filmId, list, audience = ['me'], why, myStars, myLine, moods } = body
+  const {
+    filmId, list, audience = ['me'], why, myStars, myLine, moods,
+    // Phase 2 log signal fields
+    rewatch, rewatchScore,
+    fitAnswer, fitDimension, fitPole,
+    matchScoreAtLog, predictedStars, deltaStars, deltaZ,
+    userMuAtLog, userSigmaAtLog,
+    tasteCodeBefore, tasteCodeAfter,
+  } = body
 
   if (!filmId || !list) return NextResponse.json({ error: 'filmId and list required' }, { status: 400 })
 
@@ -52,6 +60,20 @@ export async function POST(request: NextRequest) {
     my_line: myLine ?? null,
     moods: moods ?? null,
     started_at: list === 'now_playing' ? new Date().toISOString() : null,
+    // Phase 2 log signal fields
+    rewatch: rewatch ?? null,
+    rewatch_score: rewatchScore ?? null,
+    fit_answer: fitAnswer ?? null,
+    fit_dimension: fitDimension ?? null,
+    fit_pole: fitPole ?? null,
+    match_score_at_log: matchScoreAtLog ?? null,
+    predicted_stars: predictedStars ?? null,
+    delta_stars: deltaStars ?? null,
+    delta_z: deltaZ ?? null,
+    user_mu_at_log: userMuAtLog ?? null,
+    user_sigma_at_log: userSigmaAtLog ?? null,
+    taste_code_before: tasteCodeBefore ?? null,
+    taste_code_after: tasteCodeAfter ?? null,
   }
 
   const { data, error } = await supabase

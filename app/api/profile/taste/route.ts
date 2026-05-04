@@ -4,6 +4,7 @@ import { generateTasteProse, TasteDimensions, computeTasteVector } from '@/lib/p
 import { FilmBrief, FilmDimensionsV2 } from '@/lib/prompts/film-brief'
 import { posterUrl } from '@/lib/types'
 import { computeTasteCode, RatedFilmEntry } from '@/lib/taste-code'
+import { computeRatingStats } from '@/lib/taste/match-score'
 
 const DIMS = ['pace', 'story_engine', 'tone', 'warmth', 'complexity', 'style'] as const
 
@@ -145,13 +146,14 @@ export async function GET() {
   const topRated = [...allWatched]
     .filter(e => e.my_stars != null)
     .sort((a, b) => (b.my_stars as number) - (a.my_stars as number))
-    .slice(0, 6)
+    .slice(0, 12)
     .map(e => ({
       film_id: e.film_id,
       title: e.film?.title ?? '',
       poster_path: e.film?.poster_path ? posterUrl(e.film.poster_path, 'w342') : null,
       year: e.film?.year ?? null,
       director: e.film?.director ?? null,
+      kind: (e.film?.kind ?? 'movie') as 'movie' | 'tv',
       stars: e.my_stars as number,
     }))
 
@@ -308,6 +310,12 @@ export async function GET() {
     }))
   const tasteCode = computeTasteCode(tasteCodeFilms)
 
+  // ── Normalized rating stats (μ / σ) ─────────────────────────────────────────
+  const allStarRatings = allWatched
+    .filter(e => e.my_stars != null)
+    .map(e => e.my_stars as number)
+  const ratingStats = computeRatingStats(allStarRatings)
+
   return NextResponse.json({
     myName,
     dimensions,
@@ -326,5 +334,6 @@ export async function GET() {
     ratedCount: rated.length,
     diagnosticFilms,
     tasteCode,
+    ratingStats,
   })
 }

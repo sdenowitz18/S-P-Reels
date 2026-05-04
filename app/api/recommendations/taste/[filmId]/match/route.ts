@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAI, MODELS } from '@/lib/openai'
 import { getOrCacheFilm } from '@/lib/tmdb'
+import { computeTasteCode, RatedFilmEntry } from '@/lib/taste-code'
+import { computeMatchScore, MATCH_SCORE_MIN_FILMS } from '@/lib/taste/match-score'
+import { FilmDimensionsV2 } from '@/lib/prompts/film-brief'
+import { posterUrl } from '@/lib/types'
 
 const DIMS = ['pace', 'story_engine', 'tone', 'warmth', 'complexity', 'style'] as const
 
@@ -38,19 +42,58 @@ export async function GET(
     // fall through — we'll still generate a match from GPT's knowledge
   }
 
-  // Compute user's taste vector
+  // Fetch user's watched library (need dimensions_v2 for taste code + old dims for LLM narrative)
   const { data: entries } = await supabase
     .from('library_entries')
-    .select('my_stars, film:films(title, ai_brief)')
+    .select('film_id, my_stars, film:films(title, poster_path, ai_brief)')
     .eq('user_id', user.id)
     .eq('list', 'watched')
 
-  type RawEntry = { my_stars: number | null; film: { title: string; ai_brief: { dimensions?: Record<string, number>; genres?: string[] } | null } | null }
-  const rated = ((entries ?? []) as unknown as RawEntry[]).filter(e => e.my_stars != null && e.film?.ai_brief?.dimensions)
+  type RawEntry = {
+    film_id: string
+    my_stars: number | null
+    film: {
+      title: string
+      poster_path: string | null
+      ai_brief: {
+        dimensions?: Record<string, number>
+        dimensions_v2?: FilmDimensionsV2
+        genres?: string[]
+      } | null
+    } | null
+  }
+  const allEntries = (entries ?? []) as unknown as RawEntry[]
+  const rated = allEntries.filter(e => e.my_stars != null && e.film?.ai_brief?.dimensions)
 
   if (rated.length < 3) {
-    return NextResponse.json({ match: null, reason: 'not_enough_data' })
+    return NextResponse.json({ match: null, score: null, reason: 'not_enough_data' })
   }
+
+  // ── Numeric match score (pole-score interpolation, no LLM) ──────────────────
+  let score: number | null = null
+
+  if (rated.length >= MATCH_SCORE_MIN_FILMS) {
+    // Build RatedFilmEntry[] for dimensions_v2-enabled films
+    const tasteCodeFilms: RatedFilmEntry[] = allEntries
+      .filter(e => e.my_stars != null && (e.film?.ai_brief as { dimensions_v2?: unknown } | null)?.dimensions_v2)
+      .map(e => ({
+        film_id:       e.film_id,
+        title:         e.film?.title ?? '',
+        poster_path:   e.film?.poster_path ? posterUrl(e.film.poster_path, 'w185') : null,
+        stars:         e.my_stars as number,
+        dimensions_v2: (e.film!.ai_brief as { dimensions_v2: FilmDimensionsV2 }).dimensions_v2,
+      }))
+
+    const tasteCode = computeTasteCode(tasteCodeFilms)
+
+    // Get film's dimensions_v2 (may be in the cached film row)
+    const filmDimsV2 = (film?.ai_brief as { dimensions_v2?: FilmDimensionsV2 } | null)?.dimensions_v2 ?? null
+
+    if (tasteCode && filmDimsV2) {
+      score = computeMatchScore(tasteCode, filmDimsV2)
+    }
+  }
+  // ───────────────────────────────────────────────────────────────────────────
 
   const dimTotals: Record<string, number> = Object.fromEntries(DIMS.map(d => [d, 0]))
   const dimWeights: Record<string, number> = Object.fromEntries(DIMS.map(d => [d, 0]))
@@ -144,7 +187,10 @@ Output ONLY the 2-3 sentence assessment.`
     })
 
     const match = res.choices[0].message.content?.trim() ?? null
-    return NextResponse.json({ match })
+    // filmDimsV2 is the 0-100 per-dimension object — returned so the client
+    // can surface the top-scoring poles on the Fit Check card (Card 3 follow-up)
+    const filmDimsV2 = (film?.ai_brief as { dimensions_v2?: FilmDimensionsV2 } | null)?.dimensions_v2 ?? null
+    return NextResponse.json({ match, score, filmDims: filmDimsV2 })
   } catch {
     return NextResponse.json({ error: 'generation failed' }, { status: 500 })
   }

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteCode, TasteCodeEntry, ALL_POLES } from '@/lib/taste-code'
+import { poleBadgeTier } from '@/components/taste-letter'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -95,8 +96,20 @@ function SpectrumBar({ entry }: { entry: TasteCodeEntry }) {
         }} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-3)' }}>{leftScore}</span>
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--ink-3)' }}>{rightScore}</span>
+        {[leftScore, rightScore].map((score, i) => {
+          const tier = poleBadgeTier(score)
+          const bg   = tier === 'H' ? 'var(--forest, #225533)' : tier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge)'
+          const fg   = tier === 'L' ? 'var(--ink-3)' : '#fff'
+          return (
+            <span key={i} style={{
+              fontFamily: 'var(--mono)', fontSize: 9, fontWeight: 700,
+              background: bg, color: fg,
+              borderRadius: 999, padding: '2px 7px', letterSpacing: '0.04em',
+            }}>
+              {tier}
+            </span>
+          )
+        })}
       </div>
     </div>
   )
@@ -237,6 +250,8 @@ function LetterBlock({
 
   const showLabel = size === 'large' || size === 'medium'
 
+  const badgeTier = poleBadgeTier(entry.poleScore)
+
   return (
     <div onClick={onClick} title={entry.label} style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{
@@ -245,8 +260,18 @@ function LetterBlock({
         alignItems: 'center', justifyContent: 'center',
         gap: 8, border: borderStyle, borderRadius: 12,
         background: bg, transition: 'all 200ms ease',
-        userSelect: 'none', flexShrink: 0,
+        userSelect: 'none', flexShrink: 0, position: 'relative',
       }}>
+        {/* H/M/L pole badge — top-right corner */}
+        <span style={{
+          position: 'absolute', top: -5, right: -5,
+          minWidth: 16, height: 16, borderRadius: 999,
+          background: badgeTier === 'H' ? 'var(--forest, #225533)' : badgeTier === 'M' ? 'var(--sun, #d4a847)' : 'var(--paper-edge, #ccc)',
+          color: badgeTier === 'L' ? 'var(--ink-3)' : '#fff',
+          fontSize: 8, fontFamily: 'var(--mono)', fontWeight: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '0 3px', pointerEvents: 'none', lineHeight: 1,
+        }}>{badgeTier}</span>
         <span style={{ fontFamily: 'var(--serif-display)', fontSize: dim.fs, fontWeight: 500, lineHeight: 1, color: letterColor }}>
           {entry.letter}
         </span>

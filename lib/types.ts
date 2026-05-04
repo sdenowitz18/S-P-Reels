@@ -66,6 +66,8 @@ export interface Film {
   cast_json: CastMember[] | null
   keywords: string[] | null
   tmdb_genres: string[] | null
+  tmdb_vote_average: number | null
+  tmdb_vote_count: number | null
   ai_brief?: FilmBriefData | null
   dimensions_v2?: Record<string, number> | null
   fetched_at: string
@@ -92,6 +94,8 @@ export interface LibraryEntry {
   live_notes: LiveNote[] | null
   added_at: string
   finished_at: string | null
+  rewatch: boolean | null
+  rewatch_score: number | null
 }
 
 export interface LiveNote {
