@@ -37,6 +37,11 @@ export default function StagePage({ params }: { params: Promise<{ slug: string }
   }, [params])
 
   const choose = (flow: 'now-playing' | 'rate' | 'reflect') => {
+    // Fire-and-forget enrichment so the insight card has data when they finish
+    if (film?.id) {
+      fetch(`/api/films/${film.id}/enrich`, { method: 'POST' }).catch(() => {})
+    }
+
     if (flow === 'now-playing') {
       sessionStorage.setItem('sp_status', 'now-playing')
       sessionStorage.removeItem('sp_flow')
