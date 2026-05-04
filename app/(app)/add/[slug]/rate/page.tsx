@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
+import { LetterLoader } from '@/components/letter-loader'
 import { TMDBSearchResult, posterUrl } from '@/lib/types'
 
 // ── Dimension label lookup for Card 3 follow-up ───────────────────────────────
@@ -206,6 +207,11 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
   const [friendScores, setFriendScores]       = useState<{ id: string; name: string; matchScore: number }[]>([])
   const [friendScoresLoading, setFriendScoresLoading] = useState(false)
 
+  // ── Insight loading interstitial ─────────────────────────────────────────
+  // true while we wait for panel re-fetch, taste shifts, and friend scores.
+  // Card 4 won't reveal until this clears, so it always appears fully loaded.
+  const [insightLoading, setInsightLoading] = useState(false)
+
   const initDone = useRef(false)
 
   useEffect(() => {
@@ -306,30 +312,48 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
         const d = await res.json()
         throw new Error(d.error || 'save failed')
       }
-      advance(4) // → insight card
+      advance(4) // → card 4, but insightLoading = true gates the reveal
 
-      // Compute taste code letter shifts in background (don't block card advance)
-      if (preTasteEntries) {
-        setShiftsLoading(true)
-        try {
-          const newTasteRes = await fetch('/api/profile/taste').then(r => r.json())
-          const postEntries = newTasteRes?.tasteCode?.allEntries as TasteEntry[] | undefined
-          if (postEntries) {
-            setTasteShifts(computeTasteShiftsFn(preTasteEntries, postEntries))
-          }
-        } catch {}
-        setShiftsLoading(false)
+      // Show interstitial while all insight data loads in parallel
+      setInsightLoading(true)
+
+      // Parallel: re-fetch panel (for post-enrichment matchScore), taste shifts, friend scores
+      const [panelResult, tasteResult, friendResult] = await Promise.allSettled([
+        film?.id ? fetch(`/api/films/${film.id}/panel`).then(r => r.json()) : Promise.resolve(null),
+        preTasteEntries ? fetch('/api/profile/taste').then(r => r.json()) : Promise.resolve(null),
+        film?.id ? fetch(`/api/films/${film.id}/friend-scores`).then(r => r.json()) : Promise.resolve(null),
+      ])
+
+      // Update matchScore if enrichment completed during the rating flow
+      if (panelResult.status === 'fulfilled' && panelResult.value?.matchScore != null) {
+        const freshMatchScore: number = panelResult.value.matchScore
+        setMatchScore(freshMatchScore)
+        // Recompute prediction with fresh matchScore (only if stats exist)
+        if (ratingStats && stars) {
+          const { mu, sigma } = ratingStats
+          const freshPredicted  = mu + ((freshMatchScore - 50) / 25) * sigma
+          const freshDeltaStars = stars - freshPredicted
+          const freshDeltaZ     = freshDeltaStars / sigma
+          setPredictedStars(freshPredicted)
+          setDeltaZ(freshDeltaZ)
+          computedPredicted  = freshPredicted
+          computedDeltaStars = freshDeltaStars
+          computedDeltaZ     = freshDeltaZ
+        }
       }
 
-      // Fetch friend match scores in background
-      if (film?.id) {
-        setFriendScoresLoading(true)
-        try {
-          const fsRes = await fetch(`/api/films/${film.id}/friend-scores`).then(r => r.json())
-          if (fsRes?.friends?.length > 0) setFriendScores(fsRes.friends)
-        } catch {}
-        setFriendScoresLoading(false)
+      // Taste shifts
+      if (tasteResult.status === 'fulfilled' && tasteResult.value && preTasteEntries) {
+        const postEntries = tasteResult.value?.tasteCode?.allEntries as TasteEntry[] | undefined
+        if (postEntries) setTasteShifts(computeTasteShiftsFn(preTasteEntries, postEntries))
       }
+
+      // Friend scores
+      if (friendResult.status === 'fulfilled' && friendResult.value?.friends?.length > 0) {
+        setFriendScores(friendResult.value.friends)
+      }
+
+      setInsightLoading(false)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'something went wrong — try again')
     } finally {
@@ -703,6 +727,19 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
               {saving ? 'saving…' : 'done →'}
             </button>
           </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // ── Card 4: loading interstitial ─────────────────────────────────────────────
+  // Shown while taste shifts, friend scores, and panel re-fetch are in flight.
+  // Clears before the insight card renders, so the card is always fully loaded.
+  if (card === 4 && insightLoading) {
+    return (
+      <AppShell active="movies">
+        <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
+          <LetterLoader label="loading your film insights…" size={92} />
         </div>
       </AppShell>
     )

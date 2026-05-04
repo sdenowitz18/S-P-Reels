@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AppShell } from '@/components/app-shell'
 import { posterUrl } from '@/lib/types'
 import { GENRE_GROUPS } from '@/lib/genre-groups'
@@ -7,11 +7,12 @@ import Image from 'next/image'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface MemberInfo {
+interface Friend { id: string; name: string }
+
+// Taste info fetched lazily for the room header (not the selection screen)
+interface MemberTaste {
   id: string
-  name: string
-  letters: string | null      // e.g. "OCPE" (null if not enough logs)
-  topGenres: string[]         // top 2-3 genre labels
+  letters: string | null
 }
 
 interface MoodFilm {
@@ -25,87 +26,49 @@ interface MoodFilm {
   memberScores: Record<string, number>
 }
 
-// ── Fetch member taste info ───────────────────────────────────────────────────
-
-async function fetchMemberInfo(id: string, isSelf: boolean): Promise<MemberInfo | null> {
-  try {
-    const url = isSelf ? '/api/profile/taste' : `/api/friends/${id}/taste`
-    const data = await fetch(url).then(r => r.json())
-    const letters = data?.tasteCode?.letters ?? null
-    const topGenres: string[] = (data?.simpleGenres ?? []).slice(0, 3).map((g: any) => g.label)
-    return { id, name: data?.myName ?? data?.friendName ?? '', letters, topGenres }
-  } catch {
-    return null
-  }
-}
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function MemberCard({
-  member, selected, onClick, isYou,
-}: {
-  member: MemberInfo
-  selected: boolean
-  onClick: () => void
-  isYou?: boolean
-}) {
+/** Simple name chip for the selection screen — no taste fetch needed */
+function FriendChip({
+  name, selected, onClick,
+}: { name: string; selected: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       style={{
-        textAlign: 'left', padding: '14px 16px', borderRadius: 12, cursor: 'pointer',
+        padding: '10px 18px', borderRadius: 999, cursor: 'pointer',
+        fontFamily: 'var(--serif-body)', fontSize: 14,
         border: `${selected ? '1.5px solid var(--ink)' : '0.5px solid var(--paper-edge)'}`,
-        background: selected ? 'var(--paper-2)' : 'var(--paper)',
-        transition: 'all 150ms', minWidth: 140, maxWidth: 180,
+        background: selected ? 'var(--ink)' : 'var(--paper)',
+        color: selected ? 'var(--paper)' : 'var(--ink)',
+        transition: 'all 150ms',
       }}
     >
-      {/* Name + selected indicator */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
-        <div style={{ fontFamily: 'var(--serif-display)', fontSize: 15, fontWeight: 500, lineHeight: 1.2 }}>
-          {isYou ? 'you' : member.name}
-        </div>
-        {selected && (
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ink)', flexShrink: 0, marginTop: 4 }} />
-        )}
-      </div>
-      {/* Taste code letters */}
-      {member.letters ? (
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 12, letterSpacing: '0.15em', color: 'var(--ink-2)', marginBottom: 6 }}>
-          {member.letters}
-        </div>
-      ) : (
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', marginBottom: 6, letterSpacing: '0.08em' }}>
-          not enough logs
-        </div>
-      )}
-      {/* Top genres */}
-      {member.topGenres.length > 0 && (
-        <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.4 }}>
-          {member.topGenres.slice(0, 2).join(' · ')}
-        </div>
-      )}
+      {name}
     </button>
   )
 }
 
+/** Room header pip — shows initials + name + letters (loaded lazily) */
 function RoomMemberPip({
-  member, isYou,
-}: { member: MemberInfo; isYou?: boolean }) {
+  name, isYou, letters,
+}: { name: string; isYou?: boolean; letters?: string | null }) {
+  const display = isYou ? 'you' : name
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 52 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 48 }}>
       <div style={{
-        width: 36, height: 36, borderRadius: '50%',
+        width: 34, height: 34, borderRadius: '50%',
         background: 'var(--ink)', display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: 'var(--serif-display)', fontSize: 13, fontWeight: 600, color: 'var(--paper)',
       }}>
-        {(isYou ? 'you' : member.name).charAt(0).toUpperCase()}
+        {display.charAt(0).toUpperCase()}
       </div>
       <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', textAlign: 'center' }}>
-        {isYou ? 'you' : member.name.split(' ')[0]}
+        {isYou ? 'you' : name.split(' ')[0]}
       </div>
-      {member.letters && (
+      {letters && (
         <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-2)', letterSpacing: '0.12em' }}>
-          {member.letters}
+          {letters}
         </div>
       )}
     </div>
@@ -127,15 +90,23 @@ function ScoreBadge({ score, isGroup }: { score: number; isGroup?: boolean }) {
 }
 
 function FilmCard({
-  film, roomMembers, onSave, saved,
+  film, selfId, friends, selectedFriendIds, onSave, saved,
 }: {
   film: MoodFilm
-  roomMembers: MemberInfo[]
+  selfId: string
+  friends: Friend[]
+  selectedFriendIds: string[]
   onSave: (filmId: string) => void
   saved: boolean
 }) {
   const poster = film.poster_path ? posterUrl(film.poster_path, 'w185') : null
-  const isGroup = roomMembers.length > 1
+  const allIds = [selfId, ...selectedFriendIds]
+  const isGroup = allIds.length > 1
+
+  const labelFor = (id: string) => {
+    if (id === selfId) return 'YOU'
+    return (friends.find(f => f.id === id)?.name.split(' ')[0] ?? 'them').toUpperCase()
+  }
 
   return (
     <div style={{ display: 'flex', gap: 14, padding: '16px 18px', background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 12 }}>
@@ -154,19 +125,19 @@ function FilmCard({
           {film.kind === 'tv' ? ' · series' : ''}
         </div>
 
-        {/* Per-member score breakdown (group only) */}
+        {/* Per-member breakdown (group only) */}
         {isGroup && Object.keys(film.memberScores).length > 0 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {roomMembers.filter(m => film.memberScores[m.id] != null).map((m, idx) => (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+            {allIds.filter(id => film.memberScores[id] != null).map(id => (
+              <div key={id} style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
-                  {(idx === 0 ? 'you' : m.name.split(' ')[0]).toUpperCase()}
+                  {labelFor(id)}
                 </span>
                 <span style={{
                   fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
-                  color: film.memberScores[m.id] >= 70 ? 'var(--s-ink)' : film.memberScores[m.id] >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
+                  color: film.memberScores[id] >= 70 ? 'var(--s-ink)' : film.memberScores[id] >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
                 }}>
-                  {film.memberScores[m.id]}%
+                  {film.memberScores[id]}%
                 </span>
               </div>
             ))}
@@ -193,72 +164,76 @@ function FilmCard({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function MoodPage() {
-  // ── Step: 'who' (member selection) → 'room' (full UI) ────────────────────
-  const [step, setStep]           = useState<'who' | 'room'>('who')
+  // ── Step: who → room ──────────────────────────────────────────────────────
+  const [step, setStep]             = useState<'who' | 'room'>('who')
 
-  // ── Member data ───────────────────────────────────────────────────────────
-  const [selfInfo, setSelfInfo]   = useState<MemberInfo | null>(null)
-  const [friendInfos, setFriendInfos] = useState<MemberInfo[]>([])
-  const [loadingMembers, setLoadingMembers] = useState(true)
+  // ── Friends (fast — just names) ───────────────────────────────────────────
+  const [selfId, setSelfId]         = useState('')
+  const [selfName, setSelfName]     = useState('you')
+  const [friends, setFriends]       = useState<Friend[]>([])
+  const [loadingFriends, setLoadingFriends] = useState(true)
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([])
 
+  // ── Room header taste letters (lazy-loaded after entering room) ───────────
+  const [memberTaste, setMemberTaste] = useState<MemberTaste[]>([])
+  const tasteLoadedRef = useRef(false)
+
   // ── Filters ───────────────────────────────────────────────────────────────
-  const [kind, setKind]           = useState<'any' | 'movie' | 'tv'>('any')
-  const [genre, setGenre]         = useState<string | null>(null)
+  const [kind, setKind]             = useState<'any' | 'movie' | 'tv'>('any')
+  const [genre, setGenre]           = useState<string | null>(null)
   const [newReleases, setNewReleases] = useState(false)
 
   // ── Results ───────────────────────────────────────────────────────────────
-  const [results, setResults]     = useState<MoodFilm[]>([])
-  const [shownIds, setShownIds]   = useState<string[]>([])
-  const [loading, setLoading]     = useState(false)
+  const [results, setResults]       = useState<MoodFilm[]>([])
+  const [shownIds, setShownIds]     = useState<string[]>([])
+  const [loading, setLoading]       = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasTasteCode, setHasTasteCode] = useState(false)
-  const [error, setError]         = useState<string | null>(null)
-  const [savedIds, setSavedIds]   = useState<Set<string>>(new Set())
+  const [error, setError]           = useState<string | null>(null)
+  const [savedIds, setSavedIds]     = useState<Set<string>>(new Set())
 
-  // ── Load self + friends ────────────────────────────────────────────────────
+  // ── Load self + friends (fast — no taste computation) ─────────────────────
   useEffect(() => {
     async function load() {
-      setLoadingMembers(true)
+      setLoadingFriends(true)
       try {
-        // Fetch self + friends list in parallel
         const [meRes, friendsRes] = await Promise.all([
           fetch('/api/auth/me').then(r => r.json()),
           fetch('/api/friends').then(r => r.json()),
         ])
-
-        const meId: string = meRes?.id ?? ''
-        const friends: { id: string; name: string }[] = friendsRes?.friends ?? []
-
-        // Fetch taste info for self + all friends in parallel
-        const [selfData, ...friendData] = await Promise.all([
-          fetchMemberInfo(meId, true),
-          ...friends.map(f => fetchMemberInfo(f.id, false).then(info =>
-            info ? { ...info, name: f.name } : { id: f.id, name: f.name, letters: null, topGenres: [] }
-          )),
-        ])
-
-        // If self name is missing, fill from meRes
-        if (selfData && !selfData.name) selfData.name = meRes?.name ?? 'you'
-
-        setSelfInfo(selfData)
-        setFriendInfos(friendData)
-
+        setSelfId(meRes?.id ?? '')
+        setSelfName(meRes?.name ?? 'you')
+        const fl: Friend[] = friendsRes?.friends ?? []
+        setFriends(fl)
         // If no friends, skip directly to room
-        if (friends.length === 0) {
-          setStep('room')
-        }
+        if (fl.length === 0) setStep('room')
       } catch {}
-      setLoadingMembers(false)
+      setLoadingFriends(false)
     }
     load()
   }, [])
 
-  // ── All members in room (self always included) ────────────────────────────
-  const roomMembers: MemberInfo[] = [
-    ...(selfInfo ? [selfInfo] : []),
-    ...friendInfos.filter(f => selectedFriendIds.includes(f.id)),
-  ]
+  // ── Lazy-load taste letters for room header ────────────────────────────────
+  useEffect(() => {
+    if (step !== 'room' || tasteLoadedRef.current) return
+    tasteLoadedRef.current = true
+
+    const allIds = [selfId, ...selectedFriendIds]
+    Promise.allSettled(
+      allIds.map(id => {
+        const url = id === selfId ? '/api/profile/taste' : `/api/friends/${id}/taste`
+        return fetch(url).then(r => r.json()).then(data => ({
+          id,
+          letters: (data?.tasteCode?.letters ?? null) as string | null,
+        }))
+      })
+    ).then(results => {
+      const tastes: MemberTaste[] = results
+        .filter((r): r is PromiseFulfilledResult<MemberTaste> => r.status === 'fulfilled')
+        .map(r => r.value)
+      setMemberTaste(tastes)
+    })
+  }, [step, selfId, selectedFriendIds])
 
   // ── Generate results ───────────────────────────────────────────────────────
   const generate = async (append = false) => {
@@ -326,55 +301,53 @@ export default function MoodPage() {
     })
   }
 
-  const toggleFriend = (id: string) => {
-    setSelectedFriendIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
-  }
-
-  const enterRoom = () => {
+  const enterRoom = (friendIds: string[]) => {
+    setSelectedFriendIds(friendIds)
+    tasteLoadedRef.current = false  // reset so taste loads for the new member set
     setStep('room')
     setResults([])
     setShownIds([])
     setError(null)
   }
 
+  const lettersFor = (id: string) => memberTaste.find(t => t.id === id)?.letters ?? null
+
   // ─────────────────────────────────────────────────────────────────────────
-  // STEP: "Who's in the room?"
+  // STEP: "Who's watching?"
   // ─────────────────────────────────────────────────────────────────────────
 
   if (step === 'who') {
     return (
       <AppShell active="mood">
-        <div style={{ padding: 'clamp(40px,6vw,72px) clamp(24px,6vw,72px) 96px', maxWidth: 700, margin: '0 auto' }}>
+        <div style={{ padding: 'clamp(40px,6vw,72px) clamp(24px,6vw,72px) 96px', maxWidth: 680, margin: '0 auto' }}>
           <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 14 }}>★ MOOD ROOM</div>
           <h1 className="t-display" style={{ fontSize: 40, lineHeight: 1, marginBottom: 8 }}>
             who&rsquo;s watching?
           </h1>
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, fontFamily: 'var(--serif-italic)', maxWidth: 400, marginBottom: 36 }}>
+          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, fontFamily: 'var(--serif-italic)', maxWidth: 380, marginBottom: 36 }}>
             the room scores films for everyone you add.
           </p>
 
-          {loadingMembers ? (
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {[1, 2, 3].map(i => (
-                <div key={i} style={{ width: 140, height: 90, background: 'var(--paper-2)', borderRadius: 12, animation: 'pulse 1.5s ease-in-out infinite' }} />
+          {loadingFriends ? (
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {[90, 110, 80].map((w, i) => (
+                <div key={i} style={{ width: w, height: 42, background: 'var(--paper-2)', borderRadius: 999, animation: 'pulse 1.5s ease-in-out infinite' }} />
               ))}
             </div>
           ) : (
             <>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 32 }}>
-                {/* Self — always selected, not removable */}
-                {selfInfo && (
-                  <MemberCard member={selfInfo} selected isYou onClick={() => {}} />
-                )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 32 }}>
+                {/* Self chip — always "selected" visually, always included */}
+                <FriendChip name="you" selected onClick={() => {}} />
                 {/* Friends */}
-                {friendInfos.map(f => (
-                  <MemberCard
+                {friends.map(f => (
+                  <FriendChip
                     key={f.id}
-                    member={f}
+                    name={f.name}
                     selected={selectedFriendIds.includes(f.id)}
-                    onClick={() => toggleFriend(f.id)}
+                    onClick={() => setSelectedFriendIds(prev =>
+                      prev.includes(f.id) ? prev.filter(x => x !== f.id) : [...prev, f.id]
+                    )}
                   />
                 ))}
               </div>
@@ -382,15 +355,17 @@ export default function MoodPage() {
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <button
                   className="btn"
-                  onClick={enterRoom}
+                  onClick={() => enterRoom(selectedFriendIds)}
                   style={{ padding: '12px 24px', fontSize: 14, borderRadius: 999 }}
                 >
-                  {selectedFriendIds.length === 0 ? 'just me →' : `room of ${selectedFriendIds.length + 1} →`}
+                  {selectedFriendIds.length === 0
+                    ? 'just me →'
+                    : `room of ${selectedFriendIds.length + 1} →`}
                 </button>
                 {selectedFriendIds.length > 0 && (
                   <button
                     className="btn btn-soft"
-                    onClick={() => { setSelectedFriendIds([]); enterRoom() }}
+                    onClick={() => enterRoom([])}
                     style={{ padding: '10px 16px', fontSize: 12, borderRadius: 999 }}
                   >
                     just me →
@@ -408,6 +383,8 @@ export default function MoodPage() {
   // STEP: Room UI
   // ─────────────────────────────────────────────────────────────────────────
 
+  const allMemberIds = [selfId, ...selectedFriendIds]
+
   return (
     <AppShell active="mood">
       <div style={{ padding: 'clamp(28px,5vw,48px) clamp(16px,5vw,64px) 96px', maxWidth: 800, margin: '0 auto' }}>
@@ -418,15 +395,24 @@ export default function MoodPage() {
             <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-4)', marginBottom: 12, letterSpacing: '0.12em' }}>
               ★ MOOD ROOM
             </div>
-            {/* Member pips row */}
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              {roomMembers.map((m, idx) => (
-                <RoomMemberPip key={m.id} member={m} isYou={idx === 0} />
-              ))}
+            {/* Member pips — letters load in lazily */}
+            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <RoomMemberPip name={selfName} isYou letters={lettersFor(selfId)} />
+              {selectedFriendIds.map(id => {
+                const friend = friends.find(f => f.id === id)
+                if (!friend) return null
+                return (
+                  <RoomMemberPip
+                    key={id}
+                    name={friend.name}
+                    letters={lettersFor(id)}
+                  />
+                )
+              })}
             </div>
           </div>
           {/* Edit button */}
-          {friendInfos.length > 0 && (
+          {friends.length > 0 && (
             <button
               onClick={() => { setStep('who'); setResults([]); setShownIds([]); setError(null) }}
               style={{
@@ -493,7 +479,7 @@ export default function MoodPage() {
           </div>
         </div>
 
-        {/* ── Generate button ───────────────────────────────────────────────── */}
+        {/* ── Generate ──────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
           <button
             className="btn"
@@ -525,7 +511,7 @@ export default function MoodPage() {
           <div style={{ marginTop: 28 }}>
             {hasTasteCode && (
               <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', marginBottom: 12, letterSpacing: '0.12em' }}>
-                ★ RANKED BY {roomMembers.length > 1 ? 'CONSENSUS HARMONY SCORE' : 'TASTE MATCH'}
+                ★ RANKED BY {allMemberIds.length > 1 ? 'CONSENSUS HARMONY SCORE' : 'TASTE MATCH'}
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -533,7 +519,9 @@ export default function MoodPage() {
                 <FilmCard
                   key={film.id}
                   film={film}
-                  roomMembers={roomMembers}
+                  selfId={selfId}
+                  friends={friends}
+                  selectedFriendIds={selectedFriendIds}
                   onSave={saveToWatchlist}
                   saved={savedIds.has(film.id)}
                 />
