@@ -181,7 +181,8 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
   const [fitPole, setFitPole]           = useState<'left' | 'right' | null>(null)
   const [selectedFitDims, setSelectedFitDims] = useState<{ dimKey: string; pole: 'left' | 'right'; label: string }[]>([])
   const [surpriseNote, setSurpriseNote] = useState('')
-  const [comment, setComment]   = useState('')
+  const [comment, setComment]         = useState('')
+  const [commentPublic, setCommentPublic] = useState(false)
 
   // ── Film + data ──────────────────────────────────────────────────────────────
   const [slug, setSlug]         = useState('')
@@ -282,6 +283,7 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
           audience: ['me'],
           myStars: stars || null,
           myLine: comment.trim() || null,
+          commentPublic: commentPublic,
           // Phase 2 signal fields
           rewatch: rewatch,
           rewatchScore: rewatch === true ? rewatchScore : null,
@@ -319,7 +321,7 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
     } finally {
       setSaving(false)
     }
-  }, [saving, stars, comment, rewatch, rewatchScore, fitAnswer, fitDimension, fitPole, matchScore, ratingStats, film, advance, preTasteEntries])
+  }, [saving, stars, comment, commentPublic, rewatch, rewatchScore, fitAnswer, fitDimension, fitPole, matchScore, ratingStats, film, advance, preTasteEntries])
 
   // ── Fit labels from film dimensions ─────────────────────────────────────────
   const fitLabels = filmDims ? getTopFitLabels(filmDims) : []
@@ -653,6 +655,26 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
                 outline: 'none', resize: 'none', lineHeight: 1.55, boxSizing: 'border-box',
               }}
             />
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => setCommentPublic(p => !p)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                  fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                  fontSize: 12, color: commentPublic ? 'var(--ink)' : 'var(--ink-4)',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                <span style={{
+                  width: 14, height: 14, borderRadius: '50%', border: '1px solid currentColor',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  {commentPublic && <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'currentColor', display: 'block' }} />}
+                </span>
+                {commentPublic ? 'visible to friends' : 'make public'}
+              </button>
+            </div>
             {saveError && (
               <p style={{ marginTop: 12, fontStyle: 'italic', fontSize: 13, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>
                 {saveError}

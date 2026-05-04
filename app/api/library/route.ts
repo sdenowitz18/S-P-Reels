@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json()
   const {
-    filmId, list, audience = ['me'], why, myStars, myLine, moods,
+    filmId, list, audience = ['me'], why, myStars, myLine, commentPublic, moods,
     // Phase 2 log signal fields
     rewatch, rewatchScore,
     fitAnswer, fitDimension, fitPole,
@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
     why: why ?? null,
     my_stars: myStars ?? null,
     my_line: myLine ?? null,
+    comment_public: commentPublic === true,
     moods: moods ?? null,
     started_at: list === 'now_playing' ? new Date().toISOString() : null,
     // Phase 2 log signal fields
