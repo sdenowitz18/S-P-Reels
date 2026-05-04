@@ -158,7 +158,11 @@ export async function GET(req: NextRequest) {
   // When sorting by match score we must fetch ALL qualifying films so we can
   // compute + sort globally, then slice for pagination.
   // For year/title sorts the DB can order + paginate directly.
-  const useGlobalSort = sort === 'match' && tasteCode != null
+  // Use global sort path for:
+  //   - match sort + taste code → sort by match score
+  //   - match sort + no taste code → sort by composite quality (no taste yet)
+  // Year/title sorts use the DB-ordered path (no need to fetch all films)
+  const useGlobalSort = sort === 'match'
 
   // Build set of watched film IDs for fast exclusion
   const watchedIds = hideWatched
@@ -226,10 +230,11 @@ export async function GET(req: NextRequest) {
       return { film: f, tasteScore, compositeQuality, matchScore }
     })
     scored.sort((a, b) => {
-      if (a.matchScore == null && b.matchScore == null) return 0
-      if (a.matchScore == null) return 1
-      if (b.matchScore == null) return -1
-      return b.matchScore - a.matchScore
+      // Primary: match score; fallback to composite quality so users without
+      // a taste code still see a quality-ranked catalog instead of year order
+      const aScore = a.matchScore ?? a.compositeQuality ?? 0
+      const bScore = b.matchScore ?? b.compositeQuality ?? 0
+      return bScore - aScore
     })
 
     total = scored.length
@@ -267,7 +272,7 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    return NextResponse.json({ films: result, total, page, limit, hasMatchScores: true, ratingStats })
+    return NextResponse.json({ films: result, total, page, limit, hasMatchScores: tasteCode != null, ratingStats })
   }
 
   // ── DB-ordered path (year / title sorts) ────────────────────────────────────

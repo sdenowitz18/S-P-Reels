@@ -218,7 +218,7 @@ export default function FilmCatalogPage() {
       })
 
       const initPromise  = fetch(`/api/films?${initParams}`).then(r => r.json())
-      const indexPromise = fetch(`/api/films/index?${indexParams}`).then(r => r.json())
+      const indexPromise = fetch(`/api/films/index?${indexParams}`, { cache: 'no-store' }).then(r => r.json())
 
       // Show the first 60 as soon as they arrive
       initPromise
@@ -310,6 +310,30 @@ export default function FilmCatalogPage() {
     setIndexFilms(prev => prev ? prev.map(f => f.id === filmId ? { ...f, libraryStatus: status } : f) : prev)
     if (selectedFilm?.id === filmId) setSelectedFilm(prev => prev ? { ...prev, libraryStatus: status } : prev)
   }
+
+  // ── On-demand panel enrichment ──────────────────────────────────────────────
+  // Films from the lean index don't carry dimBreakdown or synopsis.
+  // When one is selected, fetch the full panel data and patch selectedFilm in place.
+  useEffect(() => {
+    if (!selectedFilm) return
+    // Already has panel data (initial 60) — nothing to do
+    if (selectedFilm.dimBreakdown && selectedFilm.dimBreakdown.length > 0) return
+    // Also skip if synopsis is already present (partial enrichment)
+    if (selectedFilm.synopsis != null) return
+
+    let cancelled = false
+    fetch(`/api/films/${selectedFilm.id}/panel`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return
+        setSelectedFilm(prev =>
+          prev?.id === selectedFilm.id ? { ...prev, ...data } : prev
+        )
+      })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [selectedFilm?.id])
 
   return (
     <AppShell active="films">

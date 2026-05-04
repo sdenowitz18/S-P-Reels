@@ -33,9 +33,7 @@ type IndexRow = {
   imdb_rating: number | null
   rt_score: number | null
   metacritic: number | null
-  // We select only the two JSON paths we need, not the entire ai_brief blob
-  dimensions_v2: FilmDimensionsV2 | null
-  ai_genres: string[] | null
+  ai_brief: { dimensions_v2?: FilmDimensionsV2; genres?: string[] } | null
 }
 
 export async function GET(req: NextRequest) {
@@ -76,18 +74,12 @@ export async function GET(req: NextRequest) {
   const watchedIds = new Set(lib.filter(e => e.list === 'watched').map(e => e.film_id))
   const libraryMap = new Map(lib.map(e => [e.film_id, { list: e.list, my_stars: e.my_stars }]))
 
-  // ── Lean film fetch: only the columns we actually need ───────────────────────
-  // We use ai_brief->dimensions_v2 and ai_brief->genres JSON paths so Postgres
-  // only extracts those two fields from the JSONB blob — much less data than
-  // selecting the entire ai_brief column.
+  // ── Film fetch ───────────────────────────────────────────────────────────────
+  // Select ai_brief as a whole column (JSON path extraction via -> didn't
+  // reliably map to IndexRow fields via the JS client).
   let q = supabase
     .from('films')
-    .select(`
-      id, title, year, poster_path, director, kind, tmdb_genres,
-      tmdb_vote_average, tmdb_vote_count, imdb_rating, rt_score, metacritic,
-      ai_brief->dimensions_v2 as dimensions_v2,
-      ai_brief->genres as ai_genres
-    `)
+    .select('id, title, year, poster_path, director, kind, tmdb_genres, tmdb_vote_average, tmdb_vote_count, imdb_rating, rt_score, metacritic, ai_brief')
     .not('ai_brief->dimensions_v2', 'is', null)
     .limit(5000)
   if (newOnly) q = q.gte('year', NEW_SINCE)
@@ -99,8 +91,9 @@ export async function GET(req: NextRequest) {
   const index = (rawFilms as unknown as IndexRow[])
     .filter(f => !watchedIds.has(f.id))
     .map(f => {
-      const tasteScore = tasteCode && f.dimensions_v2
-        ? computeMatchScore(tasteCode, f.dimensions_v2)
+      const dimsV2 = f.ai_brief?.dimensions_v2 ?? null
+      const tasteScore = tasteCode && dimsV2
+        ? computeMatchScore(tasteCode, dimsV2)
         : null
       const compositeQuality = computeCompositeQuality({
         tmdbVoteAverage: f.tmdb_vote_average, tmdbVoteCount: f.tmdb_vote_count,
@@ -117,7 +110,7 @@ export async function GET(req: NextRequest) {
         director:        f.director,
         kind:            (f.kind ?? 'movie') as 'movie' | 'tv',
         genres:          f.tmdb_genres ?? [],
-        aiGenres:        (f.ai_genres as string[] | null) ?? [],
+        aiGenres:        (f.ai_brief as { genres?: string[] } | null)?.genres ?? [],
         tmdb_vote_average: f.tmdb_vote_average,
         imdb_rating:     f.imdb_rating,
         rt_score:        f.rt_score,
@@ -129,10 +122,10 @@ export async function GET(req: NextRequest) {
       }
     })
     .sort((a, b) => {
-      if (a.matchScore == null && b.matchScore == null) return 0
-      if (a.matchScore == null) return 1
-      if (b.matchScore == null) return -1
-      return b.matchScore - a.matchScore
+      // Primary: match score (null → fall through to quality)
+      const aScore = a.matchScore ?? a.compositeQuality ?? 0
+      const bScore = b.matchScore ?? b.compositeQuality ?? 0
+      return bScore - aScore
     })
 
   return NextResponse.json({
@@ -140,7 +133,6 @@ export async function GET(req: NextRequest) {
     hasMatchScores: tasteCode != null,
   }, {
     headers: {
-      // Cache for 5 min — taste code doesn't change that often
       'Cache-Control': 'private, max-age=300, stale-while-revalidate=60',
     },
   })
