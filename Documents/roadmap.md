@@ -1,5 +1,5 @@
 # sp-reels — Roadmap
-_Last updated: 2026-05-04_
+_Last updated: 2026-05-05_
 
 ---
 
@@ -19,6 +19,8 @@ The core product is built. This phase is about deepening existing experiences, f
 - ✅ Compatibility: ghost tile, tone-aware prose, dual dim selection
 - ✅ Taste vector: deviation-weighted algorithm (stars − userAvg)
 - ✅ H/M/L pole badge system across all letter surfaces
+- ✅ Catalog match scores: fixed index route (JSON path bug) + on-demand panel enrichment for index films
+- ✅ Catalog quality sort fallback: no taste code → sort by compositeQuality, not year
 
 ### Up next (this week)
 - [ ] **Mood Room** — group film selection tool (PRD written, ready to build)

@@ -1,5 +1,5 @@
 # PRD: Onboarding
-_Epic 5 | Last updated: 2026-05-04_
+_Epic 5 | Last updated: 2026-05-05_
 
 The first-run experience. Must result in a taste profile before the user sees the main app. Two paths: cold start (rate a curated film set) and Letterboxd import.
 
@@ -70,6 +70,7 @@ The first-run experience. Must result in a taste profile before the user sees th
 ### Open requirements
 - [ ] Make qualitative discussion first (before numerical ratings), not after
 - [ ] Shorter interview during onboarding (3-question limit — don't overwhelm new users)
+- [ ] **Bug**: Occasional film title / poster mismatch in contradiction pairs — a film appears with the correct title but the wrong poster image (or vice versa). Root cause: data issue in the `films` table where `poster_path` for a specific `film_id` points to the wrong TMDB image. Fix: audit poster_path integrity for calibration films and contradiction candidates; add a poster URL validation step to the enrichment pipeline.
 
 ---
 

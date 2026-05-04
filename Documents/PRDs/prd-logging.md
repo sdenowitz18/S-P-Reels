@@ -1,5 +1,5 @@
 # PRD: Logging
-_Epic 2 | Last updated: 2026-05-04_
+_Epic 2 | Last updated: 2026-05-05_
 
 Logging is how users get films and TV shows into their library and generate taste signal. It covers search, all three watch states, the rating flow, the interview, and live notes during watching.
 
@@ -57,6 +57,7 @@ Logging is how users get films and TV shows into their library and generate tast
 
 **Card 4 — Comment**
 - Free-text comment field; skip or Done advances
+- **Visibility: private by default.** A "Make public" button next to the field switches the comment to public. Public comments appear on the friend activity feed; private comments are only visible to the user. The default protects casual commenters — public is an intentional opt-in.
 
 **Card 5 — Insight Card**
 - Match score + predicted star rating at time of logging
@@ -65,6 +66,7 @@ Logging is how users get films and TV shows into their library and generate tast
 - MBTI-style shift tiles showing taste code before → after
 - Suppressed: match score section for users with < 8 logs; shift tiles if nothing changed
 - CTA: "See your full taste profile →"
+- **Friend match scores section:** shows all friends + their match score for this film (the % they'd see in the catalog if they searched for it). Displayed as friend avatar + name + score badge. Tapping a friend's name sends them a quick recommendation for this film. Suppressed if user has no friends or film has no `dimensions_v2`.
 
 ### Design decisions
 - Taste diff computed per-log: `taste_code_before` and `taste_code_after` stored on library entry
@@ -78,6 +80,8 @@ Logging is how users get films and TV shows into their library and generate tast
 - [ ] Insight card thumbs up/down (confirm/deny resonance of the insight)
 - [ ] Insight card sharing (post-launch)
 - [ ] Log editing (rate/comment after the fact from the watched list)
+- [ ] Build comment visibility toggle (private default + "Make public" button) — store `comment_public: boolean` on library entry
+- [ ] Build friend match scores section on insight card — fetch friends' taste codes + compute match score per friend for the film; quick-rec tap action
 
 ---
 

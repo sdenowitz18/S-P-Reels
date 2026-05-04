@@ -1,5 +1,5 @@
 # PRD: Social Layer
-_Epic 3 | Last updated: 2026-05-04_
+_Epic 3 | Last updated: 2026-05-05_
 
 How taste becomes relational. Friends, compatibility analysis, the blend page (shared crossovers + find-together), and direct recommendations.
 
@@ -31,14 +31,26 @@ How taste becomes relational. Friends, compatibility analysis, the blend page (s
 - Activity thread: interleaved activity from both users (watches, recs, watchlist adds) with timestamps
 - Activity filter: Both / Me / Them
 - Crossover films: films you've both watched, with both star ratings shown
-- Crossover filter: loved (both ≥4), hated (both ≤2), agreed, disagreed
+- Crossover filter: loved (both ≥4★), hated (both ≤2★), agreed, disagreed
 - Film detail panel on crossover cards: your rating, their rating, recommend, move actions
 - Friend's watched/watching/want tabs (their library, your permissions)
 - Genre affinity scores: top genres for each person
 
+### Design decision: deviation-weighted crossover thresholds (open requirement)
+The current "loved / hated" thresholds (≥4★ / ≤2★) use absolute stars. This doesn't account for the fact that different users have different rating distributions — a 4★ from a harsh rater means something different than a 4★ from someone who gives 5s freely.
+
+**Target thresholds:**
+- **Both loved**: each person's rating ≥ 1 standard deviation above their own mean (i.e., `stars ≥ μ + σ` for each person separately)
+- **Both hated**: each person's rating ≤ 1 standard deviation below their own mean (`stars ≤ μ − σ`)
+- **Agreed**: star ratings are within 0.5★ of each other (exact or near-match)
+- **Disagreed**: ratings differ by > 1.5★ between the two people
+
+We already compute μ and σ per user (see `computeRatingStats` in `lib/taste/match-score.ts`). This just needs to be surfaced at the crossover query level.
+
 ### Open requirements
 - [ ] Shared watchlist (films you've both saved to watch)
 - [ ] "You should watch this" — lightweight nudge from friend's watchlist
+- [ ] Implement deviation-weighted crossover thresholds (see design decision above) — requires fetching ratingStats for both users and applying per-user thresholds at filter time
 
 ---
 

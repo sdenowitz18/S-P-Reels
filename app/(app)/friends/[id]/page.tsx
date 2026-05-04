@@ -438,6 +438,7 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
   const [theirTasteCode, setTheirTasteCode] = useState<TasteCode | null>(null)
   const [myGenres, setMyGenres]             = useState<GenreEntry[]>([])
   const [theirGenres, setTheirGenres]       = useState<GenreEntry[]>([])
+  const [removingFriend, setRemovingFriend] = useState<'idle' | 'confirm' | 'loading'>('idle')
 
   const MY_COLOR    = 'var(--s-ink)'
   const THEIR_COLOR = 'var(--p-ink)'
@@ -452,6 +453,14 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
     setBothWatching(data.bothWatching ?? [])
     setBothWant(data.bothWant ?? [])
     setLoadingBlend(false)
+  }
+
+  const handleRemoveFriend = async () => {
+    if (removingFriend === 'idle') { setRemovingFriend('confirm'); return }
+    if (removingFriend !== 'confirm') return
+    setRemovingFriend('loading')
+    await fetch(`/api/friends/${friendId}/remove`, { method: 'DELETE' })
+    router.replace('/friends')
   }
 
   const loadActivity = async (id: string) => {
@@ -585,12 +594,27 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
       )}
 
       <div style={{ padding: '40px 64px 96px', maxWidth: 1080, margin: '0 auto' }}>
-        <button
-          onClick={() => router.back()}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)', padding: 0, marginBottom: 28 }}
-        >
-          ← all friends
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+          <button
+            onClick={() => router.back()}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)', padding: 0 }}
+          >
+            ← all friends
+          </button>
+          <button
+            onClick={handleRemoveFriend}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontStyle: 'italic', fontSize: 11,
+              color: removingFriend === 'confirm' ? 'var(--error, #c0392b)' : 'var(--ink-4)',
+              fontFamily: 'var(--serif-italic)', padding: 0,
+            }}
+          >
+            {removingFriend === 'loading' ? 'removing…'
+              : removingFriend === 'confirm' ? 'confirm remove?'
+              : 'remove friend'}
+          </button>
+        </div>
 
         {loadingBlend ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

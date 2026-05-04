@@ -1,5 +1,5 @@
 # PRD: Discovery
-_Epic 4 | Last updated: 2026-05-04_
+_Epic 4 | Last updated: 2026-05-05_
 
 Discovery covers how users find what to watch: the scored catalog, the Mood Room (group decision tool), and the recommendations layer.
 
@@ -18,19 +18,22 @@ Discovery covers how users find what to watch: the scored catalog, the Mood Room
 - Film panel: poster, match score, RT/MC/IMDb, synopsis, "why it matches you" dim tiles, quick rate flow
 - "i've seen this ★" → inline star picker → post-save MBTI taste shift reveal
 - `hideWatched: true` on all catalog fetches — watched films don't appear
+- **On-demand panel enrichment**: when a film from the lean index (positions 61+) is opened, fetches `/api/films/[id]/panel` and patches the selected film state with full dimBreakdown + synopsis (~500ms latency)
+- **Quality sort fallback**: when `sort=match` but no taste code exists (< 8 rated films with dims), catalog sorts by `compositeQuality` instead of year — new users see a quality-ranked catalog, not arbitrary year order
 
 ### Design decisions
 - Genre filter is client-side from the full index (no round-trip) — the whole point of the index endpoint
-- Index endpoint uses JSON path selection (`ai_brief->dimensions_v2`) to minimize Supabase data transfer
-- Index endpoint cached 5 min client-side (`Cache-Control: private, max-age=300`)
+- Index endpoint selects full `ai_brief` column (Supabase JS client silently returned null for `ai_brief->dimensions_v2` JSON path extraction — couldn't reliably map to typed fields)
+- Index endpoint cached 5 min client-side (`Cache-Control: private, max-age=300`); index fetch uses `cache: 'no-store'` to bypass stale browser cache when re-fetching
 - Search stays server-side (full-text search can't be done client-side from the index)
+- Film count in catalog = unwatched films with `dimensions_v2` (typically 700–800 for an active user with 500+ watched films from ~1,347 total enriched films)
 
 ### Open requirements
-- [ ] When no taste code exists: sort catalog by compositeQuality (currently null-scored films go to end)
 - [ ] Taste shift direction should be prediction-aware (rated higher than expected → upward movers)
 - [ ] "We haven't analyzed this film yet" message + taste shifts coexisting is confusing — needs UX fix
 - [ ] Genre filter: persist selected genre across reload (URL param)
 - [ ] Poster lazy loading / skeleton states
+- [ ] Panel enrichment latency: ~500ms for index films — show a loading shimmer on the dim tiles while fetching
 
 ---
 
@@ -107,7 +110,8 @@ For each candidate film:
 - `app/(app)/films/film-panel.tsx` — catalog film panel
 - `app/(app)/mood/page.tsx` — mood room page (stub)
 - `app/api/films/route.ts` — paginated catalog API (search, filter, score)
-- `app/api/films/index/route.ts` — lean full index (IDs + genres + scores, cached 5 min)
+- `app/api/films/index/route.ts` — full index (all films, scores + genres, cached 5 min)
+- `app/api/films/[id]/panel/route.ts` — on-demand full panel data for index films (synopsis, dimBreakdown, matchScore)
 - `app/api/mood/recommend/route.ts` — mood room recommendation endpoint (stub)
 - `lib/genre-groups.ts` — shared GENRE_GROUPS taxonomy (catalog + watched page)
 - `lib/taste/match-score.ts` — computeMatchScore, applyQualityMultiplier, computeCompositeQuality
