@@ -202,6 +202,10 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
   const [tasteShifts, setTasteShifts]         = useState<TasteShift[]>([])
   const [shiftsLoading, setShiftsLoading]     = useState(false)
 
+  // ── Friend match scores (insight card) ─────────────────────────────────────
+  const [friendScores, setFriendScores]       = useState<{ id: string; name: string; matchScore: number }[]>([])
+  const [friendScoresLoading, setFriendScoresLoading] = useState(false)
+
   const initDone = useRef(false)
 
   useEffect(() => {
@@ -316,12 +320,22 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
         } catch {}
         setShiftsLoading(false)
       }
+
+      // Fetch friend match scores in background
+      if (film?.id) {
+        setFriendScoresLoading(true)
+        try {
+          const fsRes = await fetch(`/api/films/${film.id}/friend-scores`).then(r => r.json())
+          if (fsRes?.friends?.length > 0) setFriendScores(fsRes.friends)
+        } catch {}
+        setFriendScoresLoading(false)
+      }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'something went wrong — try again')
     } finally {
       setSaving(false)
     }
-  }, [saving, stars, comment, commentPublic, rewatch, rewatchScore, fitAnswer, fitDimension, fitPole, matchScore, ratingStats, film, advance, preTasteEntries])
+  }, [saving, stars, comment, commentPublic, rewatch, rewatchScore, fitAnswer, fitDimension, fitPole, matchScore, ratingStats, film, advance, preTasteEntries, setFriendScores, setFriendScoresLoading])
 
   // ── Fit labels from film dimensions ─────────────────────────────────────────
   const fitLabels = filmDims ? getTopFitLabels(filmDims) : []
@@ -922,6 +936,54 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
               </div>
             )}
           </div>
+
+          {/* ── Friend match scores ──────────────────────────────────── */}
+          {(friendScoresLoading || friendScores.length > 0) && (
+            <div style={{ padding: '16px 18px', background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 10, marginBottom: 16 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', marginBottom: 12 }}>
+                HOW YOUR FRIENDS WOULD RATE THIS
+              </div>
+              {friendScoresLoading ? (
+                <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', margin: 0, letterSpacing: '0.04em' }}>checking…</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {friendScores.map(f => (
+                    <div
+                      key={f.id}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+                    >
+                      <button
+                        onClick={async () => {
+                          if (!film?.id) return
+                          await fetch('/api/recommendations', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filmId: film.id, toUserId: f.id, note: '' }),
+                          })
+                        }}
+                        style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                          fontSize: 13, color: 'var(--ink-2)', textAlign: 'left',
+                          textDecoration: 'underline', textDecorationColor: 'var(--paper-edge)',
+                        }}
+                        title={`Recommend to ${f.name}`}
+                      >
+                        {f.name}
+                      </button>
+                      <div style={{
+                        fontFamily: 'var(--mono)', fontSize: 11,
+                        color: f.matchScore >= 70 ? 'var(--s-ink)' : f.matchScore >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
+                        fontWeight: 600, flexShrink: 0,
+                      }}>
+                        {f.matchScore}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* CTAs */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
