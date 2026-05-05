@@ -206,6 +206,8 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
   // ── Friend match scores (insight card) ─────────────────────────────────────
   const [friendScores, setFriendScores]       = useState<{ id: string; name: string; matchScore: number }[]>([])
   const [friendScoresLoading, setFriendScoresLoading] = useState(false)
+  const [sendingRec, setSendingRec]           = useState<Record<string, boolean>>({})
+  const [sentRec, setSentRec]                 = useState<Record<string, boolean>>({})
 
   // ── Insight loading interstitial ─────────────────────────────────────────
   // true while we wait for panel re-fetch, taste shifts, and friend scores.
@@ -284,54 +286,50 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
         setDeltaZ(computedDeltaZ)
       }
 
-      const res = await fetch('/api/library', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filmId: film?.id,
-          list: 'watched',
-          audience: ['me'],
-          myStars: stars || null,
-          myLine: comment.trim() || null,
-          commentPublic: commentPublic,
-          // Phase 2 signal fields
-          rewatch: rewatch,
-          rewatchScore: rewatch === true ? rewatchScore : null,
-          fitAnswer: fitAnswer ?? null,
-          fitDimension: fitDimension ?? null,
-          fitPole: fitPole ?? null,
-          matchScoreAtLog: matchScore ?? null,
-          predictedStars: computedPredicted,
-          deltaStars: computedDeltaStars,
-          deltaZ: computedDeltaZ,
-          userMuAtLog: ratingStats?.mu ?? null,
-          userSigmaAtLog: ratingStats?.sigma ?? null,
-        }),
-      })
-      if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error || 'save failed')
-      }
-      advance(4) // → card 4, but insightLoading = true gates the reveal
-
-      // Show interstitial while insight data loads.
-      // Two-phase so panel/friend-scores always have enriched dims:
-      //   Phase 1 (parallel): enrich film + compute taste shifts
-      //   Phase 2 (parallel): fetch panel (matchScore) + friend scores
+      // Show LetterLoader immediately — save + enrichment happen behind it.
+      advance(4)
       setInsightLoading(true)
 
-      // ── Phase 1: enrich + taste shifts ──────────────────────────────────
-      const [, tasteResult] = await Promise.allSettled([
-        // Explicitly await enrichment — fire-and-forget at stage may not have
-        // finished yet if OpenAI was slow. No-op if already enriched.
+      // ── Phase 1: save + enrich + taste shifts (all in parallel) ─────────
+      // Save runs alongside enrichment so there's no sequential delay.
+      const [saveResult, , tasteResult] = await Promise.allSettled([
+        fetch('/api/library', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filmId: film?.id,
+            list: 'watched',
+            audience: ['me'],
+            myStars: stars || null,
+            myLine: comment.trim() || null,
+            commentPublic: commentPublic,
+            rewatch: rewatch,
+            rewatchScore: rewatch === true ? rewatchScore : null,
+            fitAnswer: fitAnswer ?? null,
+            fitDimension: fitDimension ?? null,
+            fitPole: fitPole ?? null,
+            matchScoreAtLog: matchScore ?? null,
+            predictedStars: computedPredicted,
+            deltaStars: computedDeltaStars,
+            deltaZ: computedDeltaZ,
+            userMuAtLog: ratingStats?.mu ?? null,
+            userSigmaAtLog: ratingStats?.sigma ?? null,
+          }),
+        }),
+        // Await enrichment — no-op if already enriched, ensures dims exist for Phase 2
         film?.id
           ? fetch(`/api/films/${film.id}/enrich`, { method: 'POST' }).then(r => r.json())
           : Promise.resolve(null),
-        // Taste shifts can compute in parallel with enrichment
+        // Taste shifts computed in parallel
         preTasteEntries
           ? fetch('/api/profile/taste').then(r => r.json())
           : Promise.resolve(null),
       ])
+
+      // Surface save error if it failed
+      if (saveResult.status === 'rejected' || (saveResult.status === 'fulfilled' && !saveResult.value.ok)) {
+        throw new Error('save failed — please try again')
+      }
 
       // Apply taste shifts immediately (don't wait for phase 2)
       if (tasteResult.status === 'fulfilled' && tasteResult.value && preTasteEntries) {
@@ -1003,31 +1001,51 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
                       key={f.id}
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
                     >
-                      <button
-                        onClick={async () => {
-                          if (!film?.id) return
-                          await fetch('/api/recommendations', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ filmId: film.id, toUserId: f.id, note: '' }),
-                          })
-                        }}
-                        style={{
-                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                          fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
-                          fontSize: 13, color: 'var(--ink-2)', textAlign: 'left',
-                          textDecoration: 'underline', textDecorationColor: 'var(--paper-edge)',
-                        }}
-                        title={`Recommend to ${f.name}`}
-                      >
-                        {f.name}
-                      </button>
-                      <div style={{
-                        fontFamily: 'var(--mono)', fontSize: 11,
-                        color: f.matchScore >= 70 ? 'var(--s-ink)' : f.matchScore >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
-                        fontWeight: 600, flexShrink: 0,
+                      {/* Name */}
+                      <span style={{
+                        fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                        fontSize: 13, color: 'var(--ink-2)',
                       }}>
-                        {f.matchScore}%
+                        {f.name}
+                      </span>
+
+                      {/* Score + Recommend */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                        <div style={{
+                          fontFamily: 'var(--mono)', fontSize: 11,
+                          color: f.matchScore >= 70 ? 'var(--s-ink)' : f.matchScore >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
+                          fontWeight: 600,
+                        }}>
+                          {f.matchScore}%
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!film?.id || sentRec[f.id] || sendingRec[f.id]) return
+                            setSendingRec(prev => ({ ...prev, [f.id]: true }))
+                            await fetch('/api/recommendations', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ filmId: film.id, toUserId: f.id, note: '' }),
+                            })
+                            setSendingRec(prev => ({ ...prev, [f.id]: false }))
+                            setSentRec(prev => ({ ...prev, [f.id]: true }))
+                          }}
+                          disabled={sentRec[f.id] || sendingRec[f.id]}
+                          style={{
+                            background: sentRec[f.id] ? 'var(--paper-2)' : 'none',
+                            border: '0.5px solid var(--paper-edge)',
+                            borderRadius: 999,
+                            cursor: sentRec[f.id] ? 'default' : 'pointer',
+                            padding: '3px 9px',
+                            fontFamily: 'var(--mono)', fontSize: 9,
+                            letterSpacing: '0.06em',
+                            color: sentRec[f.id] ? 'var(--ink-4)' : 'var(--ink-2)',
+                            opacity: sendingRec[f.id] ? 0.5 : 1,
+                            transition: 'opacity 0.15s',
+                          }}
+                        >
+                          {sentRec[f.id] ? 'sent ✓' : sendingRec[f.id] ? '…' : 'rec →'}
+                        </button>
                       </div>
                     </div>
                   ))}
