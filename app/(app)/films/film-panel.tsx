@@ -175,7 +175,7 @@ function DimTile({ entry, expanded, onToggle }: {
           textTransform: 'uppercase', lineHeight: 1,
           color: expanded ? tstyle.fg + 'cc' : 'var(--ink-4)',
         }}>
-          {tstyle.label}
+          {filmLabel}
         </span>
       </div>
       {/* Dim label */}
@@ -562,7 +562,7 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
             <div style={{ borderTop: '0.5px solid var(--paper-edge)', margin: '0 20px' }} />
             <div style={{ padding: '16px 20px' }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 12 }}>
-                why it matches you
+                key film attributes
               </div>
 
               {/* 4 tiles in a row */}

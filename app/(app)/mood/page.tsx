@@ -23,16 +23,29 @@ interface MoodFilm {
   memberScores: Record<string, number>
 }
 
+interface MemberTasteEntry {
+  dimKey: string
+  dominantPole: 'left' | 'right'
+  poleScore: number
+  oppositeScore: number
+}
+
 interface DimRow {
   dimKey: string
   leftLabel: string; rightLabel: string
-  filmScore: number   // 0 = full left, 100 = full right
+  leftLetter: string; rightLetter: string
+  filmScore: number       // 0 = full left, 100 = full right
+  filmPoleScore: number   // current user's alignment with film's dominant pole (0–100)
 }
 
 interface PanelData {
   synopsis: string | null
   dimBreakdown: DimRow[]
   matchScore: number | null
+  imdb_rating: number | null
+  rt_score: number | null
+  metacritic: number | null
+  memberPoleData: Record<string, MemberTasteEntry[]>  // userId → taste entries
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,32 +197,139 @@ function CarouselCard({
   )
 }
 
-/** Dimension axis bar — shows where the film sits between two poles */
-function DimBar({ row }: { row: DimRow }) {
-  const pct = row.filmScore  // 0=left, 100=right
-  const leanLeft = pct < 45
-  const leanRight = pct > 55
+// ── Dim alignment helpers ─────────────────────────────────────────────────────
+
+type AlignTier = 'green' | 'yellow' | 'red' | 'neutral'
+
+const ALIGN_STYLE: Record<AlignTier, { bg: string; fg: string }> = {
+  green:   { bg: '#1a5c32', fg: '#fff' },
+  yellow:  { bg: '#8a6a20', fg: '#fff' },
+  red:     { bg: '#7a3030', fg: '#fff' },
+  neutral: { bg: 'var(--paper-edge)', fg: 'var(--ink-3)' },
+}
+
+function computeAlign(
+  dim: DimRow,
+  allIds: string[],
+  memberPoleData: Record<string, MemberTasteEntry[]>,
+): AlignTier {
+  if (Math.abs(dim.filmScore - 50) < 8) return 'neutral'
+  const filmLeanRight = dim.filmScore > 50
+  const isGroup = allIds.length > 1
+
+  if (!isGroup) {
+    // Solo: use filmPoleScore from panel API (current user's alignment)
+    if (dim.filmPoleScore >= 65) return 'green'
+    if (dim.filmPoleScore >= 35) return 'neutral'
+    return 'red'
+  }
+
+  // Group: count how many members align with film's lean
+  const aligned = allIds.filter(id => {
+    const e = memberPoleData[id]?.find(x => x.dimKey === dim.dimKey)
+    if (!e) return false
+    return filmLeanRight ? e.dominantPole === 'right' : e.dominantPole === 'left'
+  }).length
+
+  if (aligned === allIds.length) return 'green'
+  if (aligned === 0) return 'red'
+  return 'yellow'
+}
+
+function groupDimProse(
+  dim: DimRow,
+  allIds: string[],
+  memberPoleData: Record<string, MemberTasteEntry[]>,
+  nameFor: (id: string) => string,
+  align: AlignTier,
+): string {
+  const filmLeanRight = dim.filmScore > 50
+  const filmLabel = (filmLeanRight ? dim.rightLabel : dim.leftLabel).toLowerCase()
+  const oppLabel  = (filmLeanRight ? dim.leftLabel  : dim.rightLabel).toLowerCase()
+  const lean = Math.abs(dim.filmScore - 50)
+  const strength = lean >= 30 ? 'strongly' : lean >= 15 ? 'moderately' : 'slightly'
+  const isGroup = allIds.length > 1
+
+  if (!isGroup) {
+    if (align === 'green')   return `This film leans ${strength} ${filmLabel} — a quality you tend to rate very highly.`
+    if (align === 'red')     return `This film leans ${filmLabel}, which you tend to rate lower. This dimension pulls the score down.`
+    return `This film is ${strength} ${filmLabel}. Your ratings for ${filmLabel} films are mixed, so it doesn't move the needle much.`
+  }
+
+  const alignedIds    = allIds.filter(id => {
+    const e = memberPoleData[id]?.find(x => x.dimKey === dim.dimKey)
+    return e ? (filmLeanRight ? e.dominantPole === 'right' : e.dominantPole === 'left') : false
+  })
+  const misalignedIds = allIds.filter(id => !alignedIds.includes(id))
+
+  if (align === 'green') {
+    const names = allIds.map(nameFor).join(' and ')
+    return `${names} both gravitate toward ${filmLabel} films — a point of alignment.`
+  }
+  if (align === 'red') {
+    const names = allIds.map(nameFor).join(' and ')
+    return `Neither ${names} tends toward ${filmLabel} — this dimension pulls the score down for both.`
+  }
+  // yellow / split
+  const loveNames = alignedIds.map(nameFor).join(' and ')
+  const passNames = misalignedIds.map(nameFor).join(' and ')
+  return `${loveNames} gravitates toward ${filmLabel} films, while ${passNames} leans ${oppLabel} — a point where tastes diverge.`
+}
+
+/** 4-letter dim tile for Mood Room panel */
+function MoodDimTile({
+  dim, allIds, memberPoleData, expanded, onToggle,
+}: {
+  dim: DimRow
+  allIds: string[]
+  memberPoleData: Record<string, MemberTasteEntry[]>
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const filmLeanRight = dim.filmScore > 50
+  const filmLetter = filmLeanRight ? dim.rightLetter : dim.leftLetter
+  const filmLabel  = filmLeanRight ? dim.rightLabel  : dim.leftLabel
+  const align  = computeAlign(dim, allIds, memberPoleData)
+  const style  = ALIGN_STYLE[align]
+  const isGroup = allIds.length > 1
+
+  const subLabel = align === 'green'
+    ? (isGroup ? 'both love these' : 'you love these')
+    : align === 'red'
+    ? (isGroup ? 'both pass'       : 'not your usual')
+    : align === 'yellow' ? 'split' : ''
+
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+    <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onToggle}>
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+        padding: '10px 6px', borderRadius: 8,
+        background: expanded ? style.bg + 'ee' : style.bg + '25',
+        border: `1px solid ${style.bg}55`,
+        transition: 'all 150ms',
+      }}>
         <span style={{
-          fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.06em',
-          color: leanLeft ? 'var(--ink)' : 'var(--ink-4)', textTransform: 'uppercase',
-        }}>{row.leftLabel}</span>
+          fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
+          color: expanded ? style.fg : (align === 'neutral' ? 'var(--ink-3)' : style.bg),
+        }}>
+          {filmLetter}
+        </span>
         <span style={{
-          fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.06em',
-          color: leanRight ? 'var(--ink)' : 'var(--ink-4)', textTransform: 'uppercase',
-        }}>{row.rightLabel}</span>
+          fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.07em',
+          textTransform: 'uppercase', lineHeight: 1,
+          color: expanded ? style.fg + 'cc' : 'var(--ink-4)',
+        }}>
+          {filmLabel}
+        </span>
       </div>
-      <div style={{ height: 4, background: 'var(--paper-edge)', borderRadius: 999, position: 'relative' }}>
+      {subLabel && (
         <div style={{
-          position: 'absolute', top: '50%', transform: 'translate(-50%,-50%)',
-          left: `${pct}%`,
-          width: 10, height: 10, borderRadius: '50%',
-          background: 'var(--ink)', border: '2px solid var(--paper)',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-        }} />
-      </div>
+          fontFamily: 'var(--mono)', fontSize: 7, textAlign: 'center',
+          color: style.bg, marginTop: 4, letterSpacing: '0.03em',
+        }}>
+          {subLabel}
+        </div>
+      )}
     </div>
   )
 }
@@ -218,7 +338,7 @@ function DimBar({ row }: { row: DimRow }) {
 function MoodFilmPanel({
   film, panelData, panelLoading,
   selfId, selfName, friends, selectedFriendIds,
-  onClose, onSave, saved,
+  onClose, onSave, saved, onSelect, selectedForNowPlaying,
 }: {
   film: MoodFilm
   panelData: PanelData | null
@@ -230,10 +350,14 @@ function MoodFilmPanel({
   onClose: () => void
   onSave: () => void
   saved: boolean
+  onSelect: () => void
+  selectedForNowPlaying: boolean
 }) {
+  const [expandedDim, setExpandedDim] = useState<string | null>(null)
   const poster = film.poster_path ? posterUrl(film.poster_path, 'w342') : null
   const allIds = [selfId, ...selectedFriendIds]
   const isGroup = allIds.length > 1
+  const justWatchUrl = `https://www.justwatch.com/us/search?q=${encodeURIComponent(film.title)}`
 
   const nameFor = (id: string) => {
     if (id === selfId) return selfName.split(' ')[0] || 'you'
@@ -295,12 +419,36 @@ function MoodFilmPanel({
           <h2 style={{ fontFamily: 'var(--serif-display)', fontSize: 24, fontWeight: 500, margin: '0 0 4px', lineHeight: 1.2 }}>
             {film.title}
           </h2>
-          <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', marginBottom: 20 }}>
+          <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-3)', marginBottom: 14 }}>
             {[film.director, film.year, film.kind === 'tv' ? 'series' : null].filter(Boolean).join(' · ')}
           </div>
 
+          {/* Ratings row */}
+          {panelData && (panelData.imdb_rating != null || panelData.rt_score != null || panelData.metacritic != null) && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+              {panelData.imdb_rating != null && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 6, padding: '4px 9px' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>IMDb</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>{panelData.imdb_rating.toFixed(1)}</span>
+                </div>
+              )}
+              {panelData.rt_score != null && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 6, padding: '4px 9px' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>RT</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: panelData.rt_score >= 70 ? '#c0392b' : 'var(--ink-2)' }}>{panelData.rt_score}%</span>
+                </div>
+              )}
+              {panelData.metacritic != null && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 6, padding: '4px 9px' }}>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)' }}>MC</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>{panelData.metacritic}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Per-member scores */}
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 20 }}>
             {allIds.map(id => {
               const score = film.memberScores[id] ?? film.roomScore
               const name = nameFor(id)
@@ -322,42 +470,108 @@ function MoodFilmPanel({
             })}
           </div>
 
-          <div style={{ borderTop: '0.5px solid var(--paper-edge)', marginBottom: 20 }} />
+          {/* Synopsis */}
+          {panelData?.synopsis && (
+            <>
+              <div style={{ borderTop: '0.5px solid var(--paper-edge)', margin: '0 0 16px' }} />
+              <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.65, margin: '0 0 20px' }}>
+                {panelData.synopsis.slice(0, 280)}{panelData.synopsis.length > 280 ? '…' : ''}
+              </p>
+            </>
+          )}
 
-          {/* Film dimensions */}
+          <div style={{ borderTop: '0.5px solid var(--paper-edge)', margin: '0 0 20px' }} />
+
+          {/* Key film attributes — 4 dim tiles */}
           {panelLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '24px 0' }}>
               <LetterLoader label="loading" size={56} />
             </div>
           ) : panelData?.dimBreakdown && panelData.dimBreakdown.length > 0 ? (
             <div style={{ marginBottom: 24 }}>
-              <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.12em', marginBottom: 14 }}>
-                ★ WHAT THIS FILM IS
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 14 }}>
+                key film attributes
               </div>
-              {panelData.dimBreakdown.slice(0, 4).map(row => (
-                <DimBar key={row.dimKey} row={row} />
-              ))}
+
+              {/* 4 tiles */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                {panelData.dimBreakdown.slice(0, 4).map(dim => (
+                  <MoodDimTile
+                    key={dim.dimKey}
+                    dim={dim}
+                    allIds={allIds}
+                    memberPoleData={panelData.memberPoleData}
+                    expanded={expandedDim === dim.dimKey}
+                    onToggle={() => setExpandedDim(prev => prev === dim.dimKey ? null : dim.dimKey)}
+                  />
+                ))}
+              </div>
+
+              {/* Expanded prose */}
+              {expandedDim && (() => {
+                const dim = panelData.dimBreakdown.find(d => d.dimKey === expandedDim)
+                if (!dim) return null
+                const align = computeAlign(dim, allIds, panelData.memberPoleData)
+                const style = ALIGN_STYLE[align]
+                const prose = groupDimProse(dim, allIds, panelData.memberPoleData, nameFor, align)
+                return (
+                  <div style={{
+                    padding: '10px 12px', borderRadius: 8, marginBottom: 8,
+                    background: style.bg + '18',
+                    border: `0.5px solid ${style.bg}44`,
+                  }}>
+                    <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6, margin: 0 }}>
+                      {prose}
+                    </p>
+                  </div>
+                )
+              })()}
+
+              <p style={{ fontFamily: 'var(--mono)', fontSize: 7.5, color: 'var(--ink-4)', lineHeight: 1.5, margin: 0, letterSpacing: '0.02em' }}>
+                tap any letter to see more.
+              </p>
             </div>
           ) : null}
 
-          {panelData?.synopsis && (
-            <>
-              <div style={{ borderTop: '0.5px solid var(--paper-edge)', marginBottom: 16 }} />
-              <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.65, margin: 0 }}>
-                {panelData.synopsis.slice(0, 240)}{panelData.synopsis.length > 240 ? '…' : ''}
-              </p>
-            </>
-          )}
-
-          <div style={{ marginTop: 24 }}>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+            {/* Select for tonight */}
             <button
               className="btn"
+              onClick={onSelect}
+              disabled={selectedForNowPlaying}
+              style={{ width: '100%', padding: '13px 20px', fontSize: 13, borderRadius: 999, opacity: selectedForNowPlaying ? 0.55 : 1 }}
+            >
+              {selectedForNowPlaying
+                ? `in now playing ✓`
+                : isGroup ? `select for tonight →` : `add to now playing →`}
+            </button>
+
+            {/* Save to watchlists */}
+            <button
+              className="btn btn-soft"
               onClick={onSave}
               disabled={saved}
-              style={{ width: '100%', padding: '13px 20px', fontSize: 13, borderRadius: 999, opacity: saved ? 0.5 : 1 }}
+              style={{ width: '100%', padding: '11px 20px', fontSize: 12, borderRadius: 999, opacity: saved ? 0.5 : 1 }}
             >
               {saved ? 'saved to watchlists ✓' : 'save to watchlists →'}
             </button>
+
+            {/* JustWatch */}
+            <a
+              href={justWatchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '10px 20px', borderRadius: 999,
+                border: '0.5px solid var(--paper-edge)', background: 'var(--paper-2)',
+                fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-3)',
+                textDecoration: 'none', letterSpacing: '0.04em',
+              }}
+            >
+              find on JustWatch →
+            </a>
           </div>
         </div>
       </div>
@@ -520,8 +734,9 @@ export default function MoodPage() {
   const [panelLoading, setPanelLoading] = useState(false)
 
   // Save modal state
-  const [showSaveModal, setShowSaveModal] = useState<MoodFilm | null>(null)
-  const [savedIds, setSavedIds]           = useState<Set<string>>(new Set())
+  const [showSaveModal, setShowSaveModal]     = useState<MoodFilm | null>(null)
+  const [savedIds, setSavedIds]               = useState<Set<string>>(new Set())
+  const [nowPlayingIds, setNowPlayingIds]     = useState<Set<string>>(new Set())
 
   // ── Load self + friends ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -562,17 +777,47 @@ export default function MoodPage() {
     })
   }, [step, selfId, selectedFriendIds])
 
-  // ── Open film panel (fetch panel data) ──────────────────────────────────────
+  // ── Open film panel (fetch panel data + member poleScores) ──────────────────
   const openPanel = async (film: MoodFilm) => {
     setSelectedFilm(film)
     setPanelData(null)
     setPanelLoading(true)
     try {
-      const data = await fetch(`/api/films/${film.id}/panel`).then(r => r.json())
+      const allIds = [selfId, ...selectedFriendIds]
+
+      const [panelRes, ...tasteRess] = await Promise.allSettled([
+        fetch(`/api/films/${film.id}/panel`).then(r => r.json()),
+        ...allIds.map(id => {
+          const url = id === selfId ? '/api/profile/taste' : `/api/friends/${id}/taste`
+          return fetch(url).then(r => r.json())
+        }),
+      ])
+
+      const panel = panelRes.status === 'fulfilled' ? panelRes.value : null
+      const memberPoleData: Record<string, MemberTasteEntry[]> = {}
+
+      allIds.forEach((id, i) => {
+        const res = tasteRess[i]
+        if (res.status === 'fulfilled') {
+          const entries: { dimKey: string; dominantPole: string; poleScore: number; oppositeScore: number }[] =
+            res.value?.tasteCode?.allEntries ?? []
+          memberPoleData[id] = entries.map(e => ({
+            dimKey: e.dimKey,
+            dominantPole: e.dominantPole as 'left' | 'right',
+            poleScore: e.poleScore,
+            oppositeScore: e.oppositeScore,
+          }))
+        }
+      })
+
       setPanelData({
-        synopsis: data.synopsis ?? null,
-        dimBreakdown: data.dimBreakdown ?? [],
-        matchScore: data.matchScore ?? null,
+        synopsis:    panel?.synopsis    ?? null,
+        dimBreakdown: panel?.dimBreakdown ?? [],
+        matchScore:  panel?.matchScore  ?? null,
+        imdb_rating: panel?.imdb_rating ?? null,
+        rt_score:    panel?.rt_score    ?? null,
+        metacritic:  panel?.metacritic  ?? null,
+        memberPoleData,
       })
     } catch {}
     setPanelLoading(false)
@@ -626,9 +871,20 @@ export default function MoodPage() {
     await fetch('/api/mood/save-film', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filmId, memberIds }),
+      body: JSON.stringify({ filmId, memberIds, list: 'watchlist' }),
     })
     setSavedIds(prev => new Set([...prev, filmId]))
+  }
+
+  // ── Select film for now playing (all room members) ───────────────────────────
+  const handleSelectForTonight = async (filmId: string) => {
+    const allIds = [selfId, ...selectedFriendIds]
+    await fetch('/api/mood/save-film', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filmId, memberIds: allIds, list: 'now_playing' }),
+    })
+    setNowPlayingIds(prev => new Set([...prev, filmId]))
   }
 
   const enterRoom = (friendIds: string[]) => {
@@ -712,6 +968,8 @@ export default function MoodPage() {
           onClose={closePanel}
           onSave={() => { closePanel(); setShowSaveModal(selectedFilm) }}
           saved={savedIds.has(selectedFilm.id)}
+          onSelect={() => handleSelectForTonight(selectedFilm.id)}
+          selectedForNowPlaying={nowPlayingIds.has(selectedFilm.id)}
         />
       )}
 
@@ -812,7 +1070,7 @@ export default function MoodPage() {
             disabled={loading}
             style={{ padding: '11px 22px', fontSize: 13, borderRadius: 999, opacity: loading ? 0.5 : 1 }}
           >
-            {loading ? 'finding options…' : 'find five options →'}
+            {loading ? 'finding options…' : 'find options →'}
           </button>
           {results.length > 0 && !loading && (
             <button className="btn btn-soft" onClick={() => generate(false)} style={{ padding: '9px 14px', fontSize: 11, borderRadius: 999 }}>
@@ -864,7 +1122,7 @@ export default function MoodPage() {
                 disabled={loadingMore}
                 style={{ padding: '9px 18px', fontSize: 11, borderRadius: 999, opacity: loadingMore ? 0.5 : 1 }}
               >
-                {loadingMore ? 'finding more options…' : '5 more options →'}
+                {loadingMore ? 'finding more options…' : 'more options →'}
               </button>
             </div>
           </div>

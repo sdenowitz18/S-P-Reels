@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const { filmId, memberIds }: { filmId: string; memberIds: string[] } = await req.json()
+  const { filmId, memberIds, list = 'watchlist' }: { filmId: string; memberIds: string[]; list?: string } = await req.json()
   if (!filmId || !Array.isArray(memberIds) || memberIds.length === 0) {
     return NextResponse.json({ error: 'bad request' }, { status: 400 })
   }
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
         const { error } = await supabase.from('library_entries').upsert({
           user_id: user.id,
           film_id: filmId,
-          list: 'watchlist',
+          list,
           audience: ['me'],
         }, { onConflict: 'user_id,film_id,list', ignoreDuplicates: true })
         if (!error) saved.push(memberId)
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         const { error } = await admin.from('library_entries').upsert({
           user_id: memberId,
           film_id: filmId,
-          list: 'watchlist',
+          list,
           audience: ['me'],
         }, { onConflict: 'user_id,film_id,list', ignoreDuplicates: true })
         if (!error) saved.push(memberId)
