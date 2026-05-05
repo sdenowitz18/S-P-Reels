@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { LetterLoader } from '@/components/letter-loader'
+import { LetterTooltip } from '@/components/letter-tooltip'
 import { TMDBSearchResult, posterUrl } from '@/lib/types'
 
 // ── Dimension label lookup for Card 3 follow-up ───────────────────────────────
@@ -204,7 +205,7 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
   const [shiftsLoading, setShiftsLoading]     = useState(false)
 
   // ── Friend match scores (insight card) ─────────────────────────────────────
-  const [friendScores, setFriendScores]       = useState<{ id: string; name: string; matchScore: number }[]>([])
+  const [friendScores, setFriendScores]       = useState<{ id: string; name: string; matchScore: number; myStars: number | null }[]>([])
   const [friendScoresLoading, setFriendScoresLoading] = useState(false)
   const [sendingRec, setSendingRec]           = useState<Record<string, boolean>>({})
   const [sentRec, setSentRec]                 = useState<Record<string, boolean>>({})
@@ -938,32 +939,35 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
                         return (
                           <div key={s.letter} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
                             {/* MBTI-style tile */}
-                            <div style={{
-                              position: 'relative',
-                              width: 56, height: 56,
-                              borderRadius: 10,
-                              background: accent,
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              boxShadow: `0 2px 8px ${isUp ? 'rgba(100,140,100,0.35)' : 'rgba(140,80,80,0.35)'}`,
-                            }}>
-                              <span style={{
-                                fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700,
-                                color: '#fff', lineHeight: 1,
-                              }}>
-                                {s.letter}
-                              </span>
-                              {/* Arrow badge top-right */}
+                            <LetterTooltip letter={s.letter} position="above">
                               <div style={{
-                                position: 'absolute', top: -5, right: -5,
-                                width: 18, height: 18, borderRadius: '50%',
-                                background: 'var(--paper)',
-                                border: `1.5px solid ${accent}`,
+                                position: 'relative',
+                                width: 56, height: 56,
+                                borderRadius: 10,
+                                background: accent,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: 9, color: accent, fontWeight: 700,
+                                boxShadow: `0 2px 8px ${isUp ? 'rgba(100,140,100,0.35)' : 'rgba(140,80,80,0.35)'}`,
+                                cursor: 'default',
                               }}>
-                                {isUp ? '▲' : '▼'}
+                                <span style={{
+                                  fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700,
+                                  color: '#fff', lineHeight: 1,
+                                }}>
+                                  {s.letter}
+                                </span>
+                                {/* Arrow badge top-right */}
+                                <div style={{
+                                  position: 'absolute', top: -5, right: -5,
+                                  width: 18, height: 18, borderRadius: '50%',
+                                  background: 'var(--paper)',
+                                  border: `1.5px solid ${accent}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: 9, color: accent, fontWeight: 700,
+                                }}>
+                                  {isUp ? '▲' : '▼'}
+                                </div>
                               </div>
-                            </div>
+                            </LetterTooltip>
                             {/* Label */}
                             <div style={{
                               fontFamily: 'var(--mono)', fontSize: 7, color: 'var(--ink-4)',
@@ -990,7 +994,7 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
           {(friendScoresLoading || friendScores.length > 0) && (
             <div style={{ padding: '16px 18px', background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)', borderRadius: 10, marginBottom: 16 }}>
               <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', marginBottom: 12 }}>
-                HOW YOUR FRIENDS WOULD RATE THIS
+                YOUR FRIENDS & THIS FILM
               </div>
               {friendScoresLoading ? (
                 <p style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', margin: 0, letterSpacing: '0.04em' }}>checking…</p>
@@ -1011,41 +1015,55 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
 
                       {/* Score + Recommend */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                        <div style={{
-                          fontFamily: 'var(--mono)', fontSize: 11,
-                          color: f.matchScore >= 70 ? 'var(--s-ink)' : f.matchScore >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
-                          fontWeight: 600,
-                        }}>
-                          {f.matchScore}%
-                        </div>
-                        <button
-                          onClick={async () => {
-                            if (!film?.id || sentRec[f.id] || sendingRec[f.id]) return
-                            setSendingRec(prev => ({ ...prev, [f.id]: true }))
-                            await fetch('/api/recommendations', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ filmId: film.id, toUserId: f.id, note: '' }),
-                            })
-                            setSendingRec(prev => ({ ...prev, [f.id]: false }))
-                            setSentRec(prev => ({ ...prev, [f.id]: true }))
-                          }}
-                          disabled={sentRec[f.id] || sendingRec[f.id]}
-                          style={{
-                            background: sentRec[f.id] ? 'var(--paper-2)' : 'none',
-                            border: '0.5px solid var(--paper-edge)',
-                            borderRadius: 999,
-                            cursor: sentRec[f.id] ? 'default' : 'pointer',
-                            padding: '3px 9px',
-                            fontFamily: 'var(--mono)', fontSize: 9,
-                            letterSpacing: '0.06em',
-                            color: sentRec[f.id] ? 'var(--ink-4)' : 'var(--ink-2)',
-                            opacity: sendingRec[f.id] ? 0.5 : 1,
-                            transition: 'opacity 0.15s',
-                          }}
-                        >
-                          {sentRec[f.id] ? 'sent ✓' : sendingRec[f.id] ? '…' : 'rec →'}
-                        </button>
+                        {f.myStars != null ? (
+                          /* Friend has seen it — show their actual rating */
+                          <div style={{
+                            fontFamily: 'var(--mono)', fontSize: 11,
+                            color: f.myStars >= 4 ? 'var(--s-ink)' : f.myStars >= 2.5 ? 'var(--ink-2)' : 'var(--p-ink)',
+                            fontWeight: 600,
+                          }}>
+                            {f.myStars}★
+                          </div>
+                        ) : (
+                          /* Friend hasn't seen it — show match score prediction + rec button */
+                          <>
+                            <div style={{
+                              fontFamily: 'var(--mono)', fontSize: 11,
+                              color: f.matchScore >= 70 ? 'var(--s-ink)' : f.matchScore >= 45 ? 'var(--ink-2)' : 'var(--p-ink)',
+                              fontWeight: 600,
+                            }}>
+                              {f.matchScore}%
+                            </div>
+                            <button
+                              onClick={async () => {
+                                if (!film?.id || sentRec[f.id] || sendingRec[f.id]) return
+                                setSendingRec(prev => ({ ...prev, [f.id]: true }))
+                                await fetch('/api/recommendations', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ filmId: film.id, toUserId: f.id, note: '' }),
+                                })
+                                setSendingRec(prev => ({ ...prev, [f.id]: false }))
+                                setSentRec(prev => ({ ...prev, [f.id]: true }))
+                              }}
+                              disabled={sentRec[f.id] || sendingRec[f.id]}
+                              style={{
+                                background: sentRec[f.id] ? 'var(--paper-2)' : 'none',
+                                border: '0.5px solid var(--paper-edge)',
+                                borderRadius: 999,
+                                cursor: sentRec[f.id] ? 'default' : 'pointer',
+                                padding: '3px 9px',
+                                fontFamily: 'var(--mono)', fontSize: 9,
+                                letterSpacing: '0.06em',
+                                color: sentRec[f.id] ? 'var(--ink-4)' : 'var(--ink-2)',
+                                opacity: sendingRec[f.id] ? 0.5 : 1,
+                                transition: 'opacity 0.15s',
+                              }}
+                            >
+                              {sentRec[f.id] ? 'sent ✓' : sendingRec[f.id] ? '…' : 'rec →'}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}

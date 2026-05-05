@@ -56,7 +56,7 @@ const QUOTES = [
     detail: 'POCO · 91 titles logged',
   },
   {
-    quote: "The interview is the best part. It asked me things about shows and films I hadn't thought about in years.",
+    quote: "My girlfriend Bianca has terrible taste in movies. Now I know why.",
     name: 'Avery Roth',
     detail: 'CHDI · 178 titles logged',
   },

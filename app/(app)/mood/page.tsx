@@ -308,13 +308,15 @@ function groupDimProse(
 
 /** 4-letter dim tile for Mood Room panel */
 function MoodDimTile({
-  dim, allIds, memberPoleData, expanded, onToggle,
+  dim, allIds, memberPoleData, expanded, onToggle, tileIndex, tileCount,
 }: {
   dim: DimRow
   allIds: string[]
   memberPoleData: Record<string, MemberTasteEntry[]>
   expanded: boolean
   onToggle: () => void
+  tileIndex?: number
+  tileCount?: number
 }) {
   const filmLeanRight = dim.filmScore > 50
   const filmLetter = filmLeanRight ? dim.rightLetter : dim.leftLetter
@@ -329,6 +331,13 @@ function MoodDimTile({
     ? (isGroup ? 'both pass'       : 'not your usual')
     : align === 'yellow' ? 'split' : ''
 
+  const count = tileCount ?? 4
+  const idx   = tileIndex ?? 0
+  const tooltipAlign: 'left' | 'center' | 'right' =
+    idx === 0         ? 'left'  :
+    idx === count - 1 ? 'right' :
+    'center'
+
   return (
     <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onToggle}>
       <div style={{
@@ -338,7 +347,7 @@ function MoodDimTile({
         border: `1px solid ${style.bg}55`,
         transition: 'all 150ms',
       }}>
-        <LetterTooltip letter={filmLetter}>
+        <LetterTooltip letter={filmLetter} align={tooltipAlign}>
           <span style={{
             fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
             color: expanded ? style.fg : (align === 'neutral' ? 'var(--ink-3)' : style.bg),
@@ -527,7 +536,7 @@ function MoodFilmPanel({
 
               {/* 4 tiles */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                {panelData.dimBreakdown.slice(0, 4).map(dim => (
+                {panelData.dimBreakdown.slice(0, 4).map((dim, i) => (
                   <MoodDimTile
                     key={dim.dimKey}
                     dim={dim}
@@ -535,6 +544,8 @@ function MoodFilmPanel({
                     memberPoleData={panelData.memberPoleData}
                     expanded={expandedDim === dim.dimKey}
                     onToggle={() => setExpandedDim(prev => prev === dim.dimKey ? null : dim.dimKey)}
+                    tileIndex={i}
+                    tileCount={Math.min(panelData.dimBreakdown.length, 4)}
                   />
                 ))}
               </div>

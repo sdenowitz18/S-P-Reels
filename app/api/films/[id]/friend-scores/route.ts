@@ -71,16 +71,28 @@ export async function GET(
 
   if (friendRows.length === 0) return NextResponse.json({ friends: [] })
 
-  // ── Compute match score per friend ───────────────────────────────────────────
+  // ── Compute match score per friend + check if they've rated this film ────────
   const results = await Promise.all(
     friendRows.map(async ({ id: friendId, name }) => {
-      // Fetch friend's rated library entries
-      const { data: entries } = await admin
-        .from('library_entries')
-        .select('film_id, my_stars, films(ai_brief)')
-        .eq('user_id', friendId)
-        .eq('list', 'watched')
-        .not('my_stars', 'is', null)
+      // Fetch friend's full watched library (for taste code) + this specific film's entry
+      const [{ data: entries }, { data: thisFilmEntry }] = await Promise.all([
+        admin
+          .from('library_entries')
+          .select('film_id, my_stars, films(ai_brief)')
+          .eq('user_id', friendId)
+          .eq('list', 'watched')
+          .not('my_stars', 'is', null),
+        admin
+          .from('library_entries')
+          .select('my_stars')
+          .eq('user_id', friendId)
+          .eq('film_id', filmId)
+          .eq('list', 'watched')
+          .maybeSingle(),
+      ])
+
+      // If friend has rated this specific film, we can show their actual rating
+      const myStars: number | null = (thisFilmEntry?.my_stars as number | null) ?? null
 
       if (!entries || entries.length < MATCH_SCORE_MIN_FILMS) return null
 
@@ -105,12 +117,12 @@ export async function GET(
       const rawScore = computeMatchScore(tasteCode, dims)
       const matchScore = Math.round(applyQualityMultiplier(rawScore, compositeQuality))
 
-      return { id: friendId, name, matchScore }
+      return { id: friendId, name, matchScore, myStars }
     })
   )
 
   const friends = results
-    .filter((r): r is { id: string; name: string; matchScore: number } => r !== null)
+    .filter((r): r is { id: string; name: string; matchScore: number; myStars: number | null } => r !== null)
     .sort((a, b) => b.matchScore - a.matchScore)
 
   return NextResponse.json({ friends })

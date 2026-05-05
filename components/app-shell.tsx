@@ -6,7 +6,6 @@ import { useRouter, usePathname } from 'next/navigation'
 import { Wordmark } from './wordmark'
 import { NavPills } from './nav-pills'
 import { fetcher } from '@/lib/fetcher'
-import { LetterTooltip } from '@/components/letter-tooltip'
 import { useIsMobile } from '@/lib/use-is-mobile'
 
 interface AppShellProps {
@@ -354,20 +353,18 @@ function TastePill() {
       {code ? (
         // 4 mini letter tiles matching the profile page block style
         code.split('').map((letter: string, i: number) => (
-          <LetterTooltip key={i} letter={letter} position="below">
-            <span style={{
-              width: 22, height: 22,
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              border: '0.5px solid var(--paper-edge)',
-              borderRadius: 4,
-              background: 'var(--paper)',
-              fontFamily: 'var(--serif-display)',
-              fontSize: 13, fontWeight: 600, lineHeight: 1,
-              color: 'var(--ink)',
-            }}>
-              {letter}
-            </span>
-          </LetterTooltip>
+          <span key={i} style={{
+            width: 22, height: 22,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            border: '0.5px solid var(--paper-edge)',
+            borderRadius: 4,
+            background: 'var(--paper)',
+            fontFamily: 'var(--serif-display)',
+            fontSize: 13, fontWeight: 600, lineHeight: 1,
+            color: 'var(--ink)',
+          }}>
+            {letter}
+          </span>
         ))
       ) : (
         <span style={{

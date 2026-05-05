@@ -145,14 +145,26 @@ function dimDescription(entry: DimBreakdown): string {
   return `This film sits somewhere on the ${leftLabel}–${rightLabel} spectrum. Your ratings for films like this are mixed, so it doesn't move the score much either way.`
 }
 
-function DimTile({ entry, expanded, onToggle }: {
+function DimTile({ entry, expanded, onToggle, tileIndex, tileCount }: {
   entry: DimBreakdown
   expanded: boolean
   onToggle: () => void
+  tileIndex?: number
+  tileCount?: number
 }) {
   const { filmLetter, filmLabel } = dimLetters(entry)
   const tier   = alignTier(entry.filmPoleScore)
   const tstyle = TIER_STYLE[tier]
+
+  // Smart tooltip alignment: right-align for leftmost tile, left-align for rightmost
+  const count = tileCount ?? 4
+  const idx   = tileIndex ?? 0
+  // leftmost tile: anchor tooltip to left edge → extends rightward (stays in panel)
+  // rightmost tile: anchor tooltip to right edge → extends leftward (stays in panel)
+  const tooltipAlign: 'left' | 'center' | 'right' =
+    idx === 0         ? 'left'  :
+    idx === count - 1 ? 'right' :
+    'center'
 
   return (
     <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onToggle}>
@@ -165,7 +177,7 @@ function DimTile({ entry, expanded, onToggle }: {
         border: `1px solid ${tstyle.bg}44`,
         transition: 'all 150ms',
       }}>
-        <LetterTooltip letter={filmLetter}>
+        <LetterTooltip letter={filmLetter} align={tooltipAlign}>
           <span style={{
             fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
             color: expanded ? tstyle.fg : (tier === 'neutral' ? 'var(--ink-3)' : tstyle.bg),
@@ -316,7 +328,19 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
     }
   }
 
-  const goRate = () => { if (film) router.push(`/add/${film.id}/stage`) }
+  const goRate = () => {
+    if (!film) return
+    // Write the film into sessionStorage so the stage/rate pages pick up the right movie
+    sessionStorage.setItem('sp_film', JSON.stringify({
+      id:          film.id,
+      title:       film.title,
+      year:        film.year,
+      kind:        film.kind,
+      poster_path: film.poster_path,
+      director:    film.director,
+    }))
+    router.push(`/add/${film.id}/stage`)
+  }
 
   if (!film) return null
 
@@ -570,12 +594,14 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
 
               {/* 4 tiles in a row */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                {film.dimBreakdown!.map(entry => (
+                {film.dimBreakdown!.map((entry, i) => (
                   <DimTile
                     key={entry.dimKey}
                     entry={entry}
                     expanded={expandedDim === entry.dimKey}
                     onToggle={() => setExpandedDim(prev => prev === entry.dimKey ? null : entry.dimKey)}
+                    tileIndex={i}
+                    tileCount={film.dimBreakdown!.length}
                   />
                 ))}
               </div>

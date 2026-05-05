@@ -49,6 +49,13 @@ interface Props {
   children: React.ReactNode
   /** Override tooltip position. Default is 'above'. */
   position?: 'above' | 'below'
+  /**
+   * Horizontal alignment of the tooltip bubble.
+   * - 'center' (default): centered over the element
+   * - 'left':  left edge of tooltip aligns with left edge of element (good for rightmost tiles)
+   * - 'right': right edge of tooltip aligns with right edge of element (good for leftmost tiles)
+   */
+  align?: 'center' | 'left' | 'right'
 }
 
 /**
@@ -60,12 +67,24 @@ interface Props {
  *     <span>Z</span>
  *   </LetterTooltip>
  */
-export function LetterTooltip({ letter, children, position = 'above' }: Props) {
+export function LetterTooltip({ letter, children, position = 'above', align = 'center' }: Props) {
   const [show, setShow] = useState(false)
   const description = POLE_PLAIN[letter]
   if (!description) return <>{children}</>
 
   const isAbove = position === 'above'
+
+  // Horizontal positioning + caret offset
+  const hPos: React.CSSProperties =
+    align === 'left'   ? { left: 0 } :
+    align === 'right'  ? { right: 0 } :
+    { left: '50%', transform: 'translateX(-50%)' }
+
+  // Arrow caret horizontal alignment matches bubble
+  const caretHPos: React.CSSProperties =
+    align === 'left'   ? { left: 12 } :
+    align === 'right'  ? { right: 12 } :
+    { left: '50%', transform: 'translateX(-50%)' }
 
   return (
     <span
@@ -81,20 +100,21 @@ export function LetterTooltip({ letter, children, position = 'above' }: Props) {
             ...(isAbove
               ? { bottom: 'calc(100% + 8px)' }
               : { top: 'calc(100% + 8px)' }),
-            left: '50%',
-            transform: 'translateX(-50%)',
+            ...hPos,
             background: 'var(--ink)',
             color: 'var(--paper)',
-            padding: '7px 12px',
+            padding: '7px 10px',
             borderRadius: 7,
             fontFamily: 'var(--mono)',
-            fontSize: 10,
-            whiteSpace: 'nowrap',
+            fontSize: 9,
+            whiteSpace: 'normal',
+            width: 160,
             zIndex: 9999,
             letterSpacing: '0.02em',
             lineHeight: 1.5,
             boxShadow: '0 3px 14px rgba(0,0,0,0.22)',
             pointerEvents: 'none',
+            textAlign: 'left',
           }}
         >
           {description}
@@ -104,8 +124,7 @@ export function LetterTooltip({ letter, children, position = 'above' }: Props) {
               ...(isAbove
                 ? { top: '100%', borderTop: '5px solid var(--ink)' }
                 : { bottom: '100%', borderBottom: '5px solid var(--ink)' }),
-              left: '50%',
-              transform: 'translateX(-50%)',
+              ...caretHPos,
               width: 0, height: 0,
               borderLeft: '5px solid transparent',
               borderRight: '5px solid transparent',

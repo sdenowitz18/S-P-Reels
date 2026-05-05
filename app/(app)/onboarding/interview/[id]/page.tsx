@@ -236,10 +236,11 @@ export default function InterviewPage() {
     load()
   }, [id])
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(async (skip = false) => {
     const pair    = contradictions[step]
     const outlier = pair?.outliers[0]
-    if (!pair || !outlier || !response.trim() || submitting) return
+    if (!pair || !outlier || submitting) return
+    if (!skip && !response.trim()) return
 
     setSubmitting(true)
     const isLast = step === contradictions.length - 1
@@ -251,7 +252,8 @@ export default function InterviewPage() {
       film_a_id: pair.anchor.film_id,
       film_b_id: outlier.film_id,
       question:  buildQuestion(pair, outlier, sessionPath),
-      response:  response.trim(),
+      response:  skip ? null : response.trim(),
+      skipped:   skip,
     }
 
     try {
@@ -408,7 +410,7 @@ export default function InterviewPage() {
         <textarea
           value={response}
           onChange={e => setResponse(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit() }}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit(false) }}
           placeholder="your thoughts…"
           rows={4}
           style={{
@@ -436,7 +438,7 @@ export default function InterviewPage() {
           ⌘ + ENTER TO SUBMIT
         </div>
 
-        {/* Footer: skip + submit */}
+        {/* Footer: finish later | skip | submit */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button
             onClick={() => router.push('/home')}
@@ -448,20 +450,34 @@ export default function InterviewPage() {
           >
             finish later →
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!response.trim() || submitting}
-            className="btn"
-            style={{
-              padding:      '12px 28px',
-              fontSize:     14,
-              borderRadius: 999,
-              opacity:      !response.trim() || submitting ? 0.45 : 1,
-              transition:   'opacity 150ms',
-            }}
-          >
-            {submitting ? 'saving…' : isLast ? 'finish →' : 'next →'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <button
+              onClick={() => handleSubmit(true)}
+              disabled={submitting}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                fontSize: 13, color: 'var(--ink-4)', padding: 0,
+                opacity: submitting ? 0.4 : 1,
+              }}
+            >
+              skip →
+            </button>
+            <button
+              onClick={() => handleSubmit(false)}
+              disabled={!response.trim() || submitting}
+              className="btn"
+              style={{
+                padding:      '12px 28px',
+                fontSize:     14,
+                borderRadius: 999,
+                opacity:      !response.trim() || submitting ? 0.45 : 1,
+                transition:   'opacity 150ms',
+              }}
+            >
+              {submitting ? 'saving…' : isLast ? 'finish →' : 'next →'}
+            </button>
+          </div>
         </div>
 
       </div>

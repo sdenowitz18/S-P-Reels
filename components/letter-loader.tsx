@@ -21,9 +21,12 @@ function randomLetter() {
 }
 
 function CyclingLetter({ size = 96 }: { size?: number }) {
-  const [letter, setLetter] = useState(randomLetter)
+  // Initialize to empty so server and client render the same thing on first pass.
+  // The interval starts immediately on mount, so the box fills within one tick.
+  const [letter, setLetter] = useState('')
 
   useEffect(() => {
+    setLetter(randomLetter())
     const id = setInterval(() => setLetter(randomLetter()), 120)
     return () => clearInterval(id)
   }, [])
