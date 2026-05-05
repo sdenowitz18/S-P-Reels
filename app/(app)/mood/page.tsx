@@ -721,8 +721,9 @@ export default function MoodPage() {
   const [genre, setGenre]           = useState<string | null>(null)
   const [newReleases, setNewReleases] = useState(false)
 
-  const [results, setResults]       = useState<MoodFilm[]>([])
-  const [shownIds, setShownIds]     = useState<string[]>([])
+  // Pages of results — each page is 4 films; pageIndex is which we're viewing
+  const [pages, setPages]           = useState<MoodFilm[][]>([])
+  const [pageIndex, setPageIndex]   = useState(0)
   const [loading, setLoading]       = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasTasteCode, setHasTasteCode] = useState(false)
@@ -827,43 +828,74 @@ export default function MoodPage() {
   const closePanel = () => { setSelectedFilm(null); setPanelData(null) }
 
   // ── Generate results ─────────────────────────────────────────────────────────
-  const generate = async (append = false) => {
-    if (!append) {
-      setLoading(true); setResults([]); setShownIds([]); setError(null)
-    } else {
-      setLoadingMore(true)
-    }
-    const exclude = append ? shownIds : []
-    const genreKeyword = genre
-      ? (GENRE_GROUPS.find(g => g.label === genre)?.keywords[0] ?? genre.toLowerCase())
-      : undefined
+
+  const buildGenreKeyword = () =>
+    genre ? (GENRE_GROUPS.find(g => g.label === genre)?.keywords[0] ?? genre.toLowerCase()) : undefined
+
+  /** Fresh search — clears all pages and fetches the first 4. */
+  const generate = async () => {
+    setLoading(true)
+    setPages([])
+    setPageIndex(0)
+    setError(null)
     try {
       const res = await fetch('/api/mood/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           memberIds: selectedFriendIds,
-          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: genreKeyword, newReleases: newReleases || undefined },
-          limit: 5, exclude,
+          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: buildGenreKeyword(), newReleases: newReleases || undefined },
+          limit: 4, exclude: [],
         }),
       })
       const data = await res.json()
       if (!data.films?.length) {
-        setError(append ? 'no more options to show' : 'nothing found — try changing the filters')
+        setError('nothing found — try changing the filters')
         return
       }
-      const newFilms: MoodFilm[] = data.films
-      const newIds = newFilms.map((f: MoodFilm) => f.id)
-      if (append) {
-        setResults(prev => [...prev, ...newFilms])
-        setShownIds(prev => [...prev, ...newIds])
-      } else {
-        setResults(newFilms); setShownIds(newIds); setHasTasteCode(data.hasTasteCode)
-      }
+      setPages([data.films as MoodFilm[]])
+      setHasTasteCode(data.hasTasteCode)
     } catch {
       setError('something went wrong — try again')
     } finally {
-      setLoading(false); setLoadingMore(false)
+      setLoading(false)
+    }
+  }
+
+  /**
+   * "More options" — go forward one page.
+   * If a next page already exists in history, navigate to it instantly (no fetch).
+   * If we're at the last page, fetch 4 new films and append to history.
+   */
+  const generateMore = async () => {
+    if (pageIndex < pages.length - 1) {
+      setPageIndex(prev => prev + 1)
+      return
+    }
+    setLoadingMore(true)
+    setError(null)
+    const exclude = pages.flat().map(f => f.id)
+    try {
+      const res = await fetch('/api/mood/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberIds: selectedFriendIds,
+          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: buildGenreKeyword(), newReleases: newReleases || undefined },
+          limit: 4, exclude,
+        }),
+      })
+      const data = await res.json()
+      if (!data.films?.length) {
+        setError('no more options to show')
+        return
+      }
+      setPages(prev => [...prev, data.films as MoodFilm[]])
+      setPageIndex(prev => prev + 1)
+    } catch {
+      setError('something went wrong — try again')
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -892,7 +924,7 @@ export default function MoodPage() {
     setSelectedFriendIds(friendIds)
     tasteLoadedRef.current = false
     setStep('room')
-    setResults([]); setShownIds([]); setError(null)
+    setPages([]); setPageIndex(0); setError(null)
   }
 
   const lettersFor = (id: string) => memberTaste.find(t => t.id === id)?.letters ?? null
@@ -1007,7 +1039,7 @@ export default function MoodPage() {
           </div>
           {friends.length > 0 && (
             <button
-              onClick={() => { setStep('who'); setResults([]); setShownIds([]); setError(null) }}
+              onClick={() => { setStep('who'); setPages([]); setPageIndex(0); setError(null) }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 12, color: 'var(--ink-4)', padding: 0, marginTop: 4 }}
             >
               {selectedFriendIds.length > 0 ? 'edit room' : 'add someone'}
@@ -1067,67 +1099,77 @@ export default function MoodPage() {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
           <button
             className="btn"
-            onClick={() => generate(false)}
+            onClick={generate}
             disabled={loading}
             style={{ padding: '11px 22px', fontSize: 13, borderRadius: 999, opacity: loading ? 0.5 : 1 }}
           >
-            {loading ? 'finding options…' : 'find options →'}
+            {loading ? 'finding options…' : pages.length === 0 ? 'find options →' : 'start over →'}
           </button>
-          {results.length > 0 && !loading && (
-            <button className="btn btn-soft" onClick={() => generate(false)} style={{ padding: '9px 14px', fontSize: 11, borderRadius: 999 }}>
-              start over
-            </button>
-          )}
         </div>
 
-        {error && !loading && (
+        {error && !loading && !loadingMore && (
           <p style={{ fontStyle: 'italic', fontSize: 13, color: 'var(--ink-3)', marginTop: 12, fontFamily: 'var(--serif-italic)' }}>
             {error}
           </p>
         )}
 
-        {/* ── Results carousel ──────────────────────────────────────────── */}
-        {results.length > 0 && !loading && (
-          <div style={{ marginTop: 28 }}>
-            {hasTasteCode && (
-              <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', marginBottom: 14, letterSpacing: '0.12em' }}>
-                ★ RANKED BY {allMemberIds.length > 1 ? 'CONSENSUS HARMONY SCORE' : 'TASTE MATCH'}
+        {/* ── Results grid ─────────────────────────────────────────────── */}
+        {pages.length > 0 && !loading && (() => {
+          const currentFilms = pages[pageIndex] ?? []
+          return (
+            <div style={{ marginTop: 28 }}>
+              {hasTasteCode && (
+                <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', marginBottom: 14, letterSpacing: '0.12em' }}>
+                  ★ RANKED BY {allMemberIds.length > 1 ? 'CONSENSUS HARMONY SCORE' : 'TASTE MATCH'}
+                </div>
+              )}
+
+              {/* 4-card grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(175px, 1fr))',
+                gap: 12,
+              }}>
+                {currentFilms.map(film => (
+                  <CarouselCard
+                    key={film.id}
+                    film={film}
+                    selfId={selfId}
+                    friends={friends}
+                    selectedFriendIds={selectedFriendIds}
+                    onClick={() => openPanel(film)}
+                  />
+                ))}
               </div>
-            )}
 
-            {/* Horizontal carousel */}
-            <div style={{
-              display: 'flex', gap: 12,
-              overflowX: 'auto', paddingBottom: 16,
-              scrollSnapType: 'x mandatory',
-              scrollPaddingLeft: 4,
-              // hide scrollbar but keep scrolling
-              msOverflowStyle: 'none', scrollbarWidth: 'none',
-            }}>
-              {results.map(film => (
-                <CarouselCard
-                  key={film.id}
-                  film={film}
-                  selfId={selfId}
-                  friends={friends}
-                  selectedFriendIds={selectedFriendIds}
-                  onClick={() => openPanel(film)}
-                />
-              ))}
+              {/* Pagination nav */}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 16 }}>
+                {pageIndex > 0 && (
+                  <button
+                    className="btn btn-soft"
+                    onClick={() => setPageIndex(prev => prev - 1)}
+                    style={{ padding: '9px 16px', fontSize: 11, borderRadius: 999 }}
+                  >
+                    ← back
+                  </button>
+                )}
+                <button
+                  className="btn btn-soft"
+                  onClick={generateMore}
+                  disabled={loadingMore}
+                  style={{ padding: '9px 18px', fontSize: 11, borderRadius: 999, opacity: loadingMore ? 0.5 : 1 }}
+                >
+                  {loadingMore ? 'finding options…' : 'more options →'}
+                </button>
+                {pages.length > 1 && (
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.06em' }}>
+                    {pageIndex + 1} / {pages.length}
+                  </span>
+                )}
+              </div>
             </div>
-
-            <div style={{ marginTop: 14 }}>
-              <button
-                className="btn btn-soft"
-                onClick={() => generate(true)}
-                disabled={loadingMore}
-                style={{ padding: '9px 18px', fontSize: 11, borderRadius: 999, opacity: loadingMore ? 0.5 : 1 }}
-              >
-                {loadingMore ? 'finding more options…' : 'more options →'}
-              </button>
-            </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
     </AppShell>
   )
