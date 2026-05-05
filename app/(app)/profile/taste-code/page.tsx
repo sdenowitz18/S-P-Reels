@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteCode, TasteCodeEntry, TasteCodeFilm } from '@/lib/taste-code'
 import { TasteLetter, poleBadgeTier } from '@/components/taste-letter'
+import { LetterLoader } from '@/components/letter-loader'
 
 function HmlBadge({ score }: { score: number }) {
   const tier = poleBadgeTier(score)
@@ -276,7 +277,9 @@ export default function MyTasteCodePage() {
         </div>
 
         {loading && (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
+          </div>
         )}
 
         {!loading && !tasteCode && (

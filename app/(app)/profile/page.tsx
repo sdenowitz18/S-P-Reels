@@ -8,6 +8,7 @@ import { TasteDimensions } from '@/lib/prompts/taste-profile'
 import { LibraryEntry } from '@/lib/types'
 import { TasteCode, TasteCodeEntry } from '@/lib/taste-code'
 import { poleBadgeTier } from '@/components/taste-letter'
+import { LetterLoader } from '@/components/letter-loader'
 
 interface GenreEntry { label: string; score: number; count: number; avgRating: number | null }
 interface SignatureFilm { film_id: string; title: string; poster_path: string | null; stars: number }
@@ -759,7 +760,9 @@ export default function ProfilePage() {
         </div>
 
         {loading && (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
+          </div>
         )}
 
         {!loading && taste && (

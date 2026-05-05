@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import type { TasteCode, TasteCodeEntry } from '@/lib/taste-code'
+import { LetterLoader } from '@/components/letter-loader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -423,7 +424,7 @@ export default function QuickRatePage() {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28 }}>
 
             {filmsLoading ? (
-              <p style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)' }}>loading…</p>
+              <LetterLoader label="loading" size={72} />
             ) : allSeen ? (
               /* Ran through all films */
               <div style={{ textAlign: 'center' }}>

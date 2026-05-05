@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { FilmPanel, type PanelFilm } from './film-panel'
 import { GENRE_GROUPS } from '@/lib/genre-groups'
+import { LetterLoader } from '@/components/letter-loader'
 
 interface CatalogFilm extends PanelFilm {
   kind: 'movie' | 'tv'
@@ -497,7 +498,9 @@ export default function FilmCatalogPage() {
 
         {/* Grid */}
         {loading ? (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
+          </div>
         ) : filteredFilms.length === 0 ? (
           <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
             {activeGroup || activeKeyword ? 'no titles match this genre filter.' : mode === 'new' ? 'no recent releases found.' : 'no titles found.'}

@@ -4,6 +4,7 @@ import { AppShell } from '@/components/app-shell'
 import { posterUrl } from '@/lib/types'
 import { GENRE_GROUPS } from '@/lib/genre-groups'
 import Image from 'next/image'
+import { LetterLoader } from '@/components/letter-loader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -329,10 +330,8 @@ export default function MoodPage() {
           </p>
 
           {loadingFriends ? (
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {[90, 110, 80].map((w, i) => (
-                <div key={i} style={{ width: w, height: 42, background: 'var(--paper-2)', borderRadius: 999, animation: 'pulse 1.5s ease-in-out infinite' }} />
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 40 }}>
+              <LetterLoader label="loading" size={72} />
             </div>
           ) : (
             <>
@@ -487,7 +486,7 @@ export default function MoodPage() {
             disabled={loading}
             style={{ padding: '11px 22px', fontSize: 13, borderRadius: 999, opacity: loading ? 0.5 : 1 }}
           >
-            {loading ? 'finding films…' : 'generate five films →'}
+            {loading ? 'finding options…' : 'find five options →'}
           </button>
           {results.length > 0 && !loading && (
             <button
@@ -534,7 +533,7 @@ export default function MoodPage() {
                 disabled={loadingMore}
                 style={{ padding: '9px 18px', fontSize: 11, borderRadius: 999, opacity: loadingMore ? 0.5 : 1 }}
               >
-                {loadingMore ? 'finding more…' : 'show 5 more →'}
+                {loadingMore ? 'finding more options…' : '5 more options →'}
               </button>
             </div>
           </div>

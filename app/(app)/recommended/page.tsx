@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
 import { posterUrl } from '@/lib/types'
 import Image from 'next/image'
+import { LetterLoader } from '@/components/letter-loader'
 
 interface Rec {
   id: string
@@ -485,7 +486,9 @@ export default function RecommendedPage() {
         <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-3)', marginBottom: 20 }}>FROM YOUR FRIENDS</div>
 
         {loading && (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+            <LetterLoader label="loading" size={64} />
+          </div>
         )}
 
         {!loading && recs.length === 0 && (

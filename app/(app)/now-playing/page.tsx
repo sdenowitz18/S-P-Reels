@@ -8,6 +8,7 @@ import { LibraryEntry, posterUrl } from '@/lib/types'
 import { fetcher } from '@/lib/fetcher'
 import { useIsMobile } from '@/lib/use-is-mobile'
 import Image from 'next/image'
+import { LetterLoader } from '@/components/letter-loader'
 
 interface LibraryData { watched: LibraryEntry[]; nowPlaying: LibraryEntry[]; watchlist: LibraryEntry[] }
 
@@ -147,7 +148,9 @@ export default function NowPlayingPage() {
         </div>
 
         {loading && (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
+          </div>
         )}
 
         {!loading && entries.length === 0 && (

@@ -6,6 +6,7 @@ import { AppShell } from '@/components/app-shell'
 import { TasteDimensions } from '@/lib/prompts/taste-profile'
 import { TasteCode, TasteCodeEntry, compareTaskCodes, POLE_BY_LETTER } from '@/lib/taste-code'
 import { poleBadgeTier } from '@/components/taste-letter'
+import { LetterLoader } from '@/components/letter-loader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -862,7 +863,9 @@ export default function CompatibilityPage({ params }: { params: Promise<{ id: st
         </button>
 
         {loading ? (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
+          </div>
         ) : myData && theirData ? (
           <>
             {/* ── Page header ──────────────────────────────────────── */}

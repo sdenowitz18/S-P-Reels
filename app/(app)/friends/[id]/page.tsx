@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { TasteCode, compareTaskCodes, CompatEntry } from '@/lib/taste-code'
+import { LetterLoader } from '@/components/letter-loader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -517,32 +518,52 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
     return activity
   }, [activity, activityFilter])
 
+  // ── Per-person rating stats (mean + SD from co-watched films) ──────────────
+  const ratingStats = useMemo(() => {
+    function statsFor(ratings: number[]) {
+      if (ratings.length === 0) return { mean: 3, sd: 0.75 }
+      const mean = ratings.reduce((s, v) => s + v, 0) / ratings.length
+      const sd = ratings.length > 1
+        ? Math.sqrt(ratings.reduce((s, v) => s + (v - mean) ** 2, 0) / ratings.length)
+        : 0.75
+      return { mean, sd: Math.max(sd, 0.25) } // floor SD so thresholds are meaningful
+    }
+    const myRatings    = bothWatched.map(c => c.me.my_stars).filter((s): s is number => s != null)
+    const theirRatings = bothWatched.map(c => c.them.my_stars).filter((s): s is number => s != null)
+    return {
+      me:   statsFor(myRatings),
+      them: statsFor(theirRatings),
+    }
+  }, [bothWatched])
+
   // ── Watched filter counts + filtered list ──────────────────────────────────
   const watchedCounts = useMemo(() => {
     const me   = (c: Crossover) => c.me.my_stars  ?? 0
     const them = (c: Crossover) => c.them.my_stars ?? 0
     const bothRated = (c: Crossover) => c.me.my_stars != null && c.them.my_stars != null
+    const { me: ms, them: ts } = ratingStats
     return {
-      loved:     bothWatched.filter(c => me(c) >= 4.5 && them(c) >= 4.5).length,
-      hated:     bothWatched.filter(c => bothRated(c) && me(c) <= 3 && them(c) <= 3).length,
+      loved:     bothWatched.filter(c => bothRated(c) && me(c) >= ms.mean + ms.sd && them(c) >= ts.mean + ts.sd).length,
+      hated:     bothWatched.filter(c => bothRated(c) && me(c) <= ms.mean - ms.sd && them(c) <= ts.mean - ts.sd).length,
       agreed:    bothWatched.filter(c => bothRated(c) && me(c) === them(c)).length,
-      disagreed: bothWatched.filter(c => bothRated(c) && Math.abs(me(c) - them(c)) >= 0.5).length,
+      disagreed: bothWatched.filter(c => bothRated(c) && Math.abs(me(c) - them(c)) >= 1.5).length,
     }
-  }, [bothWatched])
+  }, [bothWatched, ratingStats])
 
   const filteredWatched = useMemo(() => {
     const me   = (c: Crossover) => c.me.my_stars  ?? 0
     const them = (c: Crossover) => c.them.my_stars ?? 0
     const bothRated = (c: Crossover) => c.me.my_stars != null && c.them.my_stars != null
+    const { me: ms, them: ts } = ratingStats
 
     if (watchedFilter === 'loved') {
       return [...bothWatched]
-        .filter(c => me(c) >= 4.5 && them(c) >= 4.5)
+        .filter(c => bothRated(c) && me(c) >= ms.mean + ms.sd && them(c) >= ts.mean + ts.sd)
         .sort((a, b) => (me(b) + them(b)) - (me(a) + them(a)))
     }
     if (watchedFilter === 'hated') {
       return [...bothWatched]
-        .filter(c => bothRated(c) && me(c) <= 3 && them(c) <= 3)
+        .filter(c => bothRated(c) && me(c) <= ms.mean - ms.sd && them(c) <= ts.mean - ts.sd)
         .sort((a, b) => (me(a) + them(a)) - (me(b) + them(b)))
     }
     if (watchedFilter === 'agreed') {
@@ -550,11 +571,11 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
         .filter(c => bothRated(c) && me(c) === them(c))
         .sort((a, b) => me(b) - me(a))
     }
-    // disagreed
+    // disagreed — 1.5★ gap
     return [...bothWatched]
-      .filter(c => bothRated(c) && Math.abs(me(c) - them(c)) >= 0.5)
+      .filter(c => bothRated(c) && Math.abs(me(c) - them(c)) >= 1.5)
       .sort((a, b) => Math.abs(me(b) - them(b)) - Math.abs(me(a) - them(a)))
-  }, [bothWatched, watchedFilter])
+  }, [bothWatched, watchedFilter, ratingStats])
 
   // ── Compat + genre memos ───────────────────────────────────────────────────
   const compat = useMemo(() => {
@@ -617,8 +638,8 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
         </div>
 
         {loadingBlend ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ height: 140, background: 'var(--paper-2)', borderRadius: 18, animation: 'pulse 1.5s ease-in-out infinite' }} />
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
           </div>
         ) : friend ? (
           <>
@@ -775,7 +796,9 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
                   </div>
 
                   {loadingActivity ? (
-                    <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading activity…</p>
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+                      <LetterLoader label="loading" size={64} />
+                    </div>
                   ) : filteredActivity.length === 0 ? (
                     <EmptyState copy={
                       activityFilter === 'me'   ? 'no activity from you yet.' :
@@ -823,10 +846,10 @@ export default function FriendBlendPage({ params }: { params: Promise<{ id: stri
 
                   {filteredWatched.length === 0 ? (
                     <EmptyState copy={
-                      watchedFilter === 'loved'     ? 'no films you both rated 4.5★ or higher yet.' :
-                      watchedFilter === 'hated'     ? 'no films you both rated 2.5★ or lower — a good sign.' :
+                      watchedFilter === 'loved'     ? 'no films you both rated above your personal average yet.' :
+                      watchedFilter === 'hated'     ? 'no films you both rated below your personal average — a good sign.' :
                       watchedFilter === 'agreed'    ? 'no films with identical ratings yet.' :
-                      'no films with a rating gap of 0.5★ or more.'
+                      'no films where you disagreed by 1.5★ or more.'
                     } />
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

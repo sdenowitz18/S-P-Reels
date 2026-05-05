@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { AppShell } from '@/components/app-shell'
+import { LetterLoader } from '@/components/letter-loader'
 
 interface Friend { id: string; name: string; email: string }
 interface IncomingRequest { id: string; to_email: string; status: string; from_user: Friend }
@@ -242,7 +243,9 @@ export default function FriendsPage() {
         <SearchPanel onRequestSent={load} />
 
         {loading && (
-          <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)' }}>loading…</p>
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
+            <LetterLoader label="loading" />
+          </div>
         )}
 
         {/* Incoming requests */}
