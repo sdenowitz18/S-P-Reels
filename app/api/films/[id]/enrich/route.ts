@@ -17,6 +17,9 @@ import { createClient } from '@/lib/supabase/server'
 import { getOrCacheFilm } from '@/lib/tmdb'
 import { generateFilmBrief, FilmDimensionsV2 } from '@/lib/prompts/film-brief'
 
+// Allow up to 60s for OpenAI to generate the film brief
+export const maxDuration = 60
+
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -314,21 +314,41 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
       }
       advance(4) // → card 4, but insightLoading = true gates the reveal
 
-      // Show interstitial while all insight data loads in parallel
+      // Show interstitial while insight data loads.
+      // Two-phase so panel/friend-scores always have enriched dims:
+      //   Phase 1 (parallel): enrich film + compute taste shifts
+      //   Phase 2 (parallel): fetch panel (matchScore) + friend scores
       setInsightLoading(true)
 
-      // Parallel: re-fetch panel (for post-enrichment matchScore), taste shifts, friend scores
-      const [panelResult, tasteResult, friendResult] = await Promise.allSettled([
+      // ── Phase 1: enrich + taste shifts ──────────────────────────────────
+      const [, tasteResult] = await Promise.allSettled([
+        // Explicitly await enrichment — fire-and-forget at stage may not have
+        // finished yet if OpenAI was slow. No-op if already enriched.
+        film?.id
+          ? fetch(`/api/films/${film.id}/enrich`, { method: 'POST' }).then(r => r.json())
+          : Promise.resolve(null),
+        // Taste shifts can compute in parallel with enrichment
+        preTasteEntries
+          ? fetch('/api/profile/taste').then(r => r.json())
+          : Promise.resolve(null),
+      ])
+
+      // Apply taste shifts immediately (don't wait for phase 2)
+      if (tasteResult.status === 'fulfilled' && tasteResult.value && preTasteEntries) {
+        const postEntries = tasteResult.value?.tasteCode?.allEntries as TasteEntry[] | undefined
+        if (postEntries) setTasteShifts(computeTasteShiftsFn(preTasteEntries, postEntries))
+      }
+
+      // ── Phase 2: panel (now enriched) + friend scores ──────────────────
+      const [panelResult, friendResult] = await Promise.allSettled([
         film?.id ? fetch(`/api/films/${film.id}/panel`).then(r => r.json()) : Promise.resolve(null),
-        preTasteEntries ? fetch('/api/profile/taste').then(r => r.json()) : Promise.resolve(null),
         film?.id ? fetch(`/api/films/${film.id}/friend-scores`).then(r => r.json()) : Promise.resolve(null),
       ])
 
-      // Update matchScore if enrichment completed during the rating flow
+      // Update matchScore + recompute prediction from freshly enriched panel
       if (panelResult.status === 'fulfilled' && panelResult.value?.matchScore != null) {
         const freshMatchScore: number = panelResult.value.matchScore
         setMatchScore(freshMatchScore)
-        // Recompute prediction with fresh matchScore (only if stats exist)
         if (ratingStats && stars) {
           const { mu, sigma } = ratingStats
           const freshPredicted  = mu + ((freshMatchScore - 50) / 25) * sigma
@@ -342,13 +362,7 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
         }
       }
 
-      // Taste shifts
-      if (tasteResult.status === 'fulfilled' && tasteResult.value && preTasteEntries) {
-        const postEntries = tasteResult.value?.tasteCode?.allEntries as TasteEntry[] | undefined
-        if (postEntries) setTasteShifts(computeTasteShiftsFn(preTasteEntries, postEntries))
-      }
-
-      // Friend scores
+      // Friend scores (enrich is done, so dims are available)
       if (friendResult.status === 'fulfilled' && friendResult.value?.friends?.length > 0) {
         setFriendScores(friendResult.value.friends)
       }

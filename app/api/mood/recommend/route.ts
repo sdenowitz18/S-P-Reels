@@ -65,6 +65,15 @@ type FilmRow = {
   ai_brief: { dimensions_v2?: FilmDimensionsV2; genres?: string[] } | null
 }
 
+/**
+ * Same display-score stretch used in the catalog:
+ *   2x − x²/100  (monotonically increasing, 0→0, 100→100, lifts 70-89 → 91-99)
+ * Keeps room scores consistent with what users see in the catalog.
+ */
+function displayScore(raw: number): number {
+  return Math.min(99, Math.round(2 * raw - (raw * raw) / 100))
+}
+
 function stdev(values: number[]): number {
   if (values.length < 2) return 0
   const mean = values.reduce((a, b) => a + b, 0) / values.length
@@ -188,9 +197,12 @@ export async function POST(req: NextRequest) {
         for (const memberId of scoringMembers) {
           const tc = tasteCodeMap.get(memberId)!
           const raw = computeMatchScore(tc, dims)
-          memberScores[memberId] = Math.round(applyQualityMultiplier(raw, compositeQuality))
+          const qualityAdjusted = applyQualityMultiplier(raw, compositeQuality)
+          // Apply same display-score stretch as catalog so numbers match
+          memberScores[memberId] = displayScore(qualityAdjusted)
         }
 
+        // Room score: mean of stretched individual scores − 0.5 × stdev
         const scores = Object.values(memberScores)
         const mean = scores.reduce((a, b) => a + b, 0) / scores.length
         const sd   = stdev(scores)
@@ -203,7 +215,7 @@ export async function POST(req: NextRequest) {
         }]
       } else {
         // No taste codes — use quality score as room score
-        const roomScore = Math.round((compositeQuality ?? 0) * 100)
+        const roomScore = displayScore(Math.round((compositeQuality ?? 0) * 100))
         return [{
           id: f.id, title: f.title, year: f.year,
           poster_path: f.poster_path, director: f.director, kind: f.kind,
