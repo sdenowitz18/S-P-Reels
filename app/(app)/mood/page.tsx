@@ -5,6 +5,7 @@ import { posterUrl } from '@/lib/types'
 import { GENRE_GROUPS } from '@/lib/genre-groups'
 import Image from 'next/image'
 import { LetterLoader } from '@/components/letter-loader'
+import { LetterTooltip } from '@/components/letter-tooltip'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ interface MoodFilm {
   kind: 'movie' | 'tv' | null
   roomScore: number
   memberScores: Record<string, number>
+  onWatchlist: string[]   // member IDs who have this on their watchlist
 }
 
 interface MemberTasteEntry {
@@ -96,8 +98,12 @@ function RoomMemberPip({ name, isYou, letters }: { name: string; isYou?: boolean
         {isYou ? 'you' : name.split(' ')[0]}
       </div>
       {letters && (
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-2)', letterSpacing: '0.12em' }}>
-          {letters}
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-2)', letterSpacing: '0.12em', display: 'flex' }}>
+          {letters.split('').map((l, i) => (
+            <LetterTooltip key={i} letter={l} position="below">
+              <span>{l}</span>
+            </LetterTooltip>
+          ))}
         </div>
       )}
     </div>
@@ -106,10 +112,11 @@ function RoomMemberPip({ name, isYou, letters }: { name: string; isYou?: boolean
 
 /** Carousel card — portrait poster, score overlay, click to open panel */
 function CarouselCard({
-  film, selfId, friends, selectedFriendIds, onClick,
+  film, selfId, selfName, friends, selectedFriendIds, onClick,
 }: {
   film: MoodFilm
   selfId: string
+  selfName: string
   friends: Friend[]
   selectedFriendIds: string[]
   onClick: () => void
@@ -120,9 +127,16 @@ function CarouselCard({
   const color = scoreColor(film.roomScore)
 
   const labelFor = (id: string) => {
-    if (id === selfId) return 'you'
+    if (id === selfId) return selfName.split(' ')[0] || 'you'
     return friends.find(f => f.id === id)?.name.split(' ')[0] ?? 'them'
   }
+
+  // Watchlist star: show if any room member has this on their watchlist
+  const watchlistNames = film.onWatchlist
+    .filter(id => allIds.includes(id))
+    .map(id => labelFor(id))
+  const hasWatchlistStar = watchlistNames.length > 0
+  const watchlistTitle = `On watchlist: ${watchlistNames.join(', ')}`
 
   return (
     <button
@@ -161,6 +175,22 @@ function CarouselCard({
             color: 'rgba(255,255,255,0.7)', letterSpacing: '0.1em',
           }}>
             SERIES
+          </div>
+        )}
+        {hasWatchlistStar && (
+          <div
+            title={watchlistTitle}
+            style={{
+              position: 'absolute', bottom: 8, right: 8,
+              background: 'rgba(24,22,18,0.78)', borderRadius: 6,
+              padding: '4px 7px',
+              fontFamily: 'var(--mono)', fontSize: 10,
+              color: 'var(--sun)', letterSpacing: '0.04em',
+              backdropFilter: 'blur(4px)',
+              cursor: 'default',
+            }}
+          >
+            ★
           </div>
         )}
       </div>
@@ -308,12 +338,14 @@ function MoodDimTile({
         border: `1px solid ${style.bg}55`,
         transition: 'all 150ms',
       }}>
-        <span style={{
-          fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
-          color: expanded ? style.fg : (align === 'neutral' ? 'var(--ink-3)' : style.bg),
-        }}>
-          {filmLetter}
-        </span>
+        <LetterTooltip letter={filmLetter}>
+          <span style={{
+            fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
+            color: expanded ? style.fg : (align === 'neutral' ? 'var(--ink-3)' : style.bg),
+          }}>
+            {filmLetter}
+          </span>
+        </LetterTooltip>
         <span style={{
           fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.07em',
           textTransform: 'uppercase', lineHeight: 1,
@@ -1135,6 +1167,7 @@ export default function MoodPage() {
                     key={film.id}
                     film={film}
                     selfId={selfId}
+                    selfName={selfName}
                     friends={friends}
                     selectedFriendIds={selectedFriendIds}
                     onClick={() => openPanel(film)}

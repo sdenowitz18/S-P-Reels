@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import type { DimBreakdown } from '@/app/api/films/route'
+import { LetterTooltip } from '@/components/letter-tooltip'
 
 // ── Taste shift types (mirrors rate page) ────────────────────────────────────
 type TasteEntry = { dimKey: string; poleScore: number; letter: string; label: string; dominantPole: 'left' | 'right' }
@@ -164,12 +165,14 @@ function DimTile({ entry, expanded, onToggle }: {
         border: `1px solid ${tstyle.bg}44`,
         transition: 'all 150ms',
       }}>
-        <span style={{
-          fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
-          color: expanded ? tstyle.fg : (tier === 'neutral' ? 'var(--ink-3)' : tstyle.bg),
-        }}>
-          {filmLetter}
-        </span>
+        <LetterTooltip letter={filmLetter}>
+          <span style={{
+            fontFamily: 'var(--serif-display)', fontSize: 28, fontWeight: 700, lineHeight: 1,
+            color: expanded ? tstyle.fg : (tier === 'neutral' ? 'var(--ink-3)' : tstyle.bg),
+          }}>
+            {filmLetter}
+          </span>
+        </LetterTooltip>
         <span style={{
           fontFamily: 'var(--mono)', fontSize: 7, letterSpacing: '0.07em',
           textTransform: 'uppercase', lineHeight: 1,

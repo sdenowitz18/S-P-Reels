@@ -141,14 +141,51 @@ export async function POST(req: NextRequest) {
   const scoringMembers = allMemberIds.filter(id => tasteCodeMap.get(id) != null)
   const hasTasteCode = scoringMembers.length > 0
 
-  // ── Fetch watched IDs for current user (hide from results) ───────────────────
-  const { data: watchedRows } = await supabase
+  // ── Fetch watched IDs for ALL members (hide already-seen films) ──────────────
+  // Current user via session (respects RLS); friends via admin client.
+  const [myWatchedRows, friendLibRows] = await Promise.all([
+    supabase
+      .from('library_entries')
+      .select('film_id')
+      .eq('user_id', user.id)
+      .in('list', ['watched', 'now_playing'])
+      .then(({ data }) => data ?? []),
+    memberIds.length > 0
+      ? admin
+          .from('library_entries')
+          .select('film_id, user_id, list')
+          .in('user_id', memberIds)
+          .in('list', ['watched', 'watchlist', 'now_playing'])
+          .then(({ data }) => data ?? [])
+      : Promise.resolve([]),
+  ])
+
+  // Films watched by anyone → excluded from recommendations
+  const watchedIds = new Set([
+    ...myWatchedRows.map((r: any) => r.film_id),
+    ...(friendLibRows as any[]).filter(r => ['watched', 'now_playing'].includes(r.list)).map((r: any) => r.film_id),
+  ])
+
+  // Films on any member's watchlist → still excluded, but we'll attach a flag
+  const watchlistByFilm = new Map<string, string[]>()  // filmId → memberIds who watchlisted it
+  for (const r of friendLibRows as any[]) {
+    if (r.list === 'watchlist') {
+      const existing = watchlistByFilm.get(r.film_id) ?? []
+      watchlistByFilm.set(r.film_id, [...existing, r.user_id])
+    }
+  }
+  // Also check current user's watchlist
+  const myWatchlistRows = await supabase
     .from('library_entries')
     .select('film_id')
     .eq('user_id', user.id)
-    .in('list', ['watched', 'now_playing'])
+    .eq('list', 'watchlist')
+    .then(({ data }) => data ?? [])
+  for (const r of myWatchlistRows as any[]) {
+    const existing = watchlistByFilm.get(r.film_id) ?? []
+    watchlistByFilm.set(r.film_id, [...existing, user.id])
+  }
 
-  const watchedIds = new Set((watchedRows ?? []).map((r: any) => r.film_id))
   const excludeSet = new Set([...watchedIds, ...exclude])
 
   // ── Fetch all enriched films ─────────────────────────────────────────────────
@@ -212,6 +249,7 @@ export async function POST(req: NextRequest) {
           id: f.id, title: f.title, year: f.year,
           poster_path: f.poster_path, director: f.director, kind: f.kind,
           roomScore, memberScores,
+          onWatchlist: watchlistByFilm.get(f.id) ?? [],
         }]
       } else {
         // No taste codes — use quality score as room score
@@ -220,6 +258,7 @@ export async function POST(req: NextRequest) {
           id: f.id, title: f.title, year: f.year,
           poster_path: f.poster_path, director: f.director, kind: f.kind,
           roomScore, memberScores: {},
+          onWatchlist: watchlistByFilm.get(f.id) ?? [],
         }]
       }
     })
