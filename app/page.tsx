@@ -51,9 +51,9 @@ const QUOTES = [
     detail: 'DROI · 204 titles logged',
   },
   {
-    quote: "My taste code explained why I love slow foreign films that put my friends to sleep.",
-    name: 'Jonathan Denowitz',
-    detail: 'POCO · 91 titles logged',
+    quote: "I check Co-Star every morning and I still don't know why I cried at Paddington 2. This told me in five minutes.",
+    name: 'Caroline Kowalski',
+    detail: 'SVHW · 312 titles logged',
   },
   {
     quote: "My girlfriend Bianca has terrible taste in movies. Now I know why.",
