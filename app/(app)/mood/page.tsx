@@ -799,11 +799,12 @@ export default function MoodPage() {
       allIds.forEach((id, i) => {
         const res = tasteRess[i]
         if (res.status === 'fulfilled') {
-          const entries: { dimKey: string; dominantPole: string; poleScore: number; oppositeScore: number }[] =
+          // TasteCodeEntry uses 'pole', not 'dominantPole'
+          const entries: { dimKey: string; pole: string; poleScore: number; oppositeScore: number }[] =
             res.value?.tasteCode?.allEntries ?? []
           memberPoleData[id] = entries.map(e => ({
             dimKey: e.dimKey,
-            dominantPole: e.dominantPole as 'left' | 'right',
+            dominantPole: e.pole as 'left' | 'right',
             poleScore: e.poleScore,
             oppositeScore: e.oppositeScore,
           }))
