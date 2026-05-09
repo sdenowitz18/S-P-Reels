@@ -252,6 +252,7 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
   const [quickRateDone, setQuickRateDone]     = useState(false)
   const [tasteShifts, setTasteShifts]         = useState<TasteShift[]>([])
   const [shiftsLoading, setShiftsLoading]     = useState(false)
+  const [trailerUrl, setTrailerUrl]           = useState<string | null>(null)
   const preTasteRef                           = useRef<TasteEntry[] | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -261,13 +262,20 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  // Reset quick rate state when film changes
+  // Reset quick rate state when film changes, and fetch trailer
   useEffect(() => {
     setQuickRating(null)
     setShowQuickRate(false)
     setQuickRateDone(false)
     setTasteShifts([])
+    setTrailerUrl(null)
     preTasteRef.current = null
+    if (film?.id) {
+      fetch(`/api/films/${film.id}/trailer`)
+        .then(r => r.json())
+        .then(d => { if (d.url) setTrailerUrl(d.url) })
+        .catch(() => {})
+    }
   }, [film?.id])
 
   const handleBackdrop = (e: React.MouseEvent) => {
@@ -644,14 +652,38 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
           </>
         )}
 
-        {/* Where to watch */}
+        {/* Where to watch + trailer */}
         <>
           <div style={{ borderTop: '0.5px solid var(--paper-edge)', margin: '0 20px' }} />
-          <div style={{ padding: '16px 20px 28px' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 8 }}>where to watch</div>
-            <a href={justWatchUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--ink-3)', textDecoration: 'none', letterSpacing: '0.04em', padding: '7px 14px', borderRadius: 999, border: '0.5px solid var(--paper-edge)', background: 'var(--paper-2)' }}>
-              search on JustWatch →
-            </a>
+          <div style={{ padding: '16px 20px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <a
+                href={justWatchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontSize: 9.5, color: 'var(--ink-3)', textDecoration: 'none', letterSpacing: '0.04em', padding: '7px 14px', borderRadius: 999, border: '0.5px solid var(--paper-edge)', background: 'var(--paper-2)' }}
+              >
+                search on JustWatch →
+              </a>
+              {trailerUrl && (
+                <a
+                  href={trailerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    fontFamily: 'var(--mono)', fontSize: 9.5,
+                    textDecoration: 'none', letterSpacing: '0.04em',
+                    padding: '7px 14px', borderRadius: 999,
+                    border: '0.5px solid #c00',
+                    background: '#fff0f0',
+                    color: '#c00',
+                  }}
+                >
+                  ▶ trailer
+                </a>
+              )}
+            </div>
           </div>
         </>
       </div>

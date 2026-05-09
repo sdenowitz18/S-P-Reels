@@ -101,6 +101,27 @@ export async function getOrCacheFilm(supabase: any, filmId: string): Promise<Fil
   return film
 }
 
+/**
+ * Returns the YouTube video key for the best available trailer,
+ * or null if none found. Priority: official Trailer > any Trailer > any YouTube video.
+ */
+export async function fetchTrailerKey(kind: FilmKind, tmdbId: number): Promise<string | null> {
+  try {
+    const path = kind === 'movie' ? `/movie/${tmdbId}/videos` : `/tv/${tmdbId}/videos`
+    const data = await tmdb(path)
+    const videos: any[] = data.results ?? []
+    const yt = videos.filter(v => v.site === 'YouTube')
+    const pick =
+      yt.find(v => v.type === 'Trailer' && v.official) ??
+      yt.find(v => v.type === 'Trailer') ??
+      yt[0] ??
+      null
+    return pick?.key ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function validateFilmTitle(title: string, year?: number): Promise<string | null> {
   const results = await searchFilms(title)
   const match = results.find(r =>
