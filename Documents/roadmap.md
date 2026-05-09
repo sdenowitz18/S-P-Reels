@@ -1,5 +1,5 @@
 # sp-reels — Roadmap
-_Last updated: 2026-05-05_
+_Last updated: 2026-05-09_
 
 ---
 
@@ -50,8 +50,37 @@ The core product is built. This phase is about deepening existing experiences, f
 - Time-based interview limits (3 min / 5 min / open)
 - Topic paths (scenes, craft, performances, themes)
 
-### Phase D — Recommendations & Collaborative Filtering
-- `/recommended` page: personalized picks with "because you..." reasoning
+### Phase D — Social Layer Sprint
+_All items below are connected by one thread: making friends feel present throughout the app rather than tucked away._
+
+#### Friend Lens (watched page)
+- Mode toggle button on the far right of the watched list header — visually distinct, styled as a "mode" not a filter. Tooltip on hover: "View your watched list from a friend's perspective."
+- Clicking opens a friend picker dropdown; selecting a friend overlays their match % on every poster as a colored badge
+- Overlay also shows: whether the friend has seen it + their star rating if they have. Stars in Lens mode are white/high-contrast for visibility on poster art
+- Hover any film in Lens mode → "Recommend" surfaces as the primary action without leaving the page
+- Recommendation notification copy: *"recommended via Friend Lens"* (not generic) so the recipient knows where to find the feature
+- When a user taps through from that notification, the Lens button pulses/flashes briefly to orient them
+
+#### Recommendations inbox — catalog tab
+- Catalog gains a third tab: **All Titles / New Releases / Recommended**
+- Recommended tab shows all films friends have sent you, with who sent it (multiple senders shown if overlapping), and any note they included
+- In the Mood Room: a small "Recommended by friends" filter surfaces relevant recs in that context too
+
+#### Activity feed improvements
+- Click any film in the activity feed → opens the film side panel with your match % for that film
+- Like and comment on a friend's activity item
+- Notifications for likes/comments on your activity
+- Color coding: each user gets a persistent color (like the existing red/blue for you vs. Paola). Their color applies to their activity rows, their "you/them" labels, and anywhere their name appears in the feed
+- Row height: revisit compactness — currently only ~1.5 rows visible at a time; consider tighter rows so more activity is scannable at once
+
+#### Friends — home page prominence
+- Friends section on home page, not buried
+- "Add Friend" button — prominent but not oversized, near the top of the friends section
+- Filter strip below it: **All** + one chip per friend — clicking a friend filters to their recent activity
+- Tapping a friend's name/chip takes you to their profile/activity
+
+#### Recommendations & Collaborative Filtering (original Phase D)
+- `/recommended` page or equivalent: personalized picks with "because you..." reasoning
 - "Because you both liked X" — surface anchoring film
 - Social signal layer: films your friends loved that align with your taste
 - "People like you" collaborative filtering — strengthen scores using cross-user patterns
@@ -63,8 +92,23 @@ The core product is built. This phase is about deepening existing experiences, f
 - TV show enrichment: same `dimensions_v2` pipeline for TV
 - Letterboxd CSV import
 
-### Phase F — Mobile + Platform
-- Mobile app (React Native or progressive web app)
+### Phase F — Native App
+Native iOS app built in Expo (React Native) — separate repo, same Supabase backend. See `prd-native-app.md` for full scope.
+
+**Phase F1 — Scaffolding + Auth**: Expo project, navigation shell, Supabase auth with email verification, bottom tabs
+**Phase F2 — Core log loop**: Search → Stage → Rate → Interview → Done → post-log share suggestion
+**Phase F3 — Catalog + Watchlist**: Film grid, match scores, film detail sheet, watchlist
+**Phase F4 — Home feed + Social**: Friend activity feed, post-log share suggestion with match %
+**Phase F5 — Onboarding + Quick Rate**: Full onboarding, Quick Rate, taste code reveal
+**Phase F6 — Notifications**: Push infrastructure, notification types, user preferences
+**Phase F7 — Polish + TestFlight**: App icon, haptics, empty states, App Store submission
+
+**Prerequisites before starting**:
+- Apple Developer Program enrollment ($99/yr, individual account)
+- Supabase email verification enabled
+- App name finalized
+
+### Phase G — Platform (Web)
 - Vercel deployment
 - Streaming availability (JustWatch deep links)
 - Loading skeletons, error boundaries, custom email templates
