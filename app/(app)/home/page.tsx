@@ -154,7 +154,7 @@ export default function HomePage() {
     if (notif.type === 'friend_accepted') {
       router.push(`/friends/${notif.payload.friendId}/compatibility`)
     } else if (notif.type === 'rec_received') {
-      router.push(`/friends/${notif.payload.fromUserId}`)
+      router.push('/films?mode=rec')
     }
   }
 
@@ -381,7 +381,7 @@ export default function HomePage() {
                       return (
                         <div
                           key={item.id}
-                          onClick={() => router.push('/recommended')}
+                          onClick={() => router.push('/films?mode=rec')}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 12,
                             padding: '12px 10px',

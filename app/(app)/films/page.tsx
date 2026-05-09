@@ -444,6 +444,12 @@ export default function FilmCatalogPage() {
   const [loadingMore, setLoadingMore]   = useState(false)
   const [indexLoading, setIndexLoading] = useState(false)
   const [mode, setMode]                 = useState<Mode>('network')
+
+  // Pre-select mode from URL param (e.g. /films?mode=rec from rec notification)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get('mode')
+    if (p === 'rec' || p === 'new') setMode(p)
+  }, [])
   const [mediaType, setMediaType]       = useState<MediaType>('both')
   const [query, setQuery]               = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
