@@ -105,6 +105,7 @@ function notificationText(n: Notification): { headline: string; sub: string } {
         sub: 'tap to accept or decline',
       }
     case 'friend_request_accepted':
+    case 'friend_accepted':
       return {
         headline: `${name} accepted your request`,
         sub: 'you\'re now connected',
@@ -118,7 +119,8 @@ function notificationHref(n: Notification): string {
   switch (n.type) {
     case 'rec_received':         return '/recommended'
     case 'friend_request':       return '/friends'
-    case 'friend_request_accepted': return '/friends'
+    case 'friend_request_accepted':
+    case 'friend_accepted':        return '/friends'
     default:                     return '/friends'
   }
 }

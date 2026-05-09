@@ -348,14 +348,18 @@ function RecommendOverlay({ friendId, friendName, onClose, onSent }: {
   const send = async () => {
     if (!selected || sending) return
     setSending(true)
-    await fetch('/api/recommendations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toUserId: friendId, filmId: selected.id, note }),
-    })
-    setSending(false)
-    onSent()
-    onClose()
+    try {
+      const res = await fetch('/api/recommendations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toUserId: friendId, filmId: String(selected.id), note }),
+      })
+      if (!res.ok) return
+      onSent()
+      onClose()
+    } finally {
+      setSending(false)
+    }
   }
 
   return (

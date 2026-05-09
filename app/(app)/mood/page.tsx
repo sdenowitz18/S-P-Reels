@@ -23,6 +23,7 @@ interface MoodFilm {
   roomScore: number
   memberScores: Record<string, number>
   onWatchlist: string[]   // member IDs who have this on their watchlist
+  seenBy: { id: string; name: string; stars: number | null }[]
 }
 
 interface MemberTasteEntry {
@@ -126,6 +127,29 @@ function CarouselCard({
   const isGroup = allIds.length > 1
   const color = scoreColor(film.roomScore)
 
+  const [trailerUrl, setTrailerUrl] = useState<string | null>(null)
+  const [hovered, setHovered] = useState(false)
+  const trailerFetchedRef = useRef(false)
+
+  const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.transform = 'translateY(-2px)'
+    e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)'
+    setHovered(true)
+    if (!trailerFetchedRef.current) {
+      trailerFetchedRef.current = true
+      fetch(`/api/films/${film.id}/trailer`)
+        .then(r => r.json())
+        .then(d => { if (d.url) setTrailerUrl(d.url) })
+        .catch(() => {})
+    }
+  }
+
+  const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.transform = ''
+    e.currentTarget.style.boxShadow = ''
+    setHovered(false)
+  }
+
   const labelFor = (id: string) => {
     if (id === selfId) return selfName.split(' ')[0] || 'you'
     return friends.find(f => f.id === id)?.name.split(' ')[0] ?? 'them'
@@ -148,8 +172,8 @@ function CarouselCard({
         padding: 0, transition: 'transform 120ms, box-shadow 120ms',
         scrollSnapAlign: 'start',
       }}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)' }}
-      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Poster */}
       <div style={{ width: '100%', height: 270, background: 'var(--bone)', position: 'relative' }}>
@@ -193,6 +217,26 @@ function CarouselCard({
             ★
           </div>
         )}
+        {hovered && trailerUrl && (
+          <a
+            href={trailerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', bottom: 8, left: 8, zIndex: 2,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontFamily: 'var(--mono)', fontSize: 9.5,
+              textDecoration: 'none', letterSpacing: '0.04em',
+              padding: '7px 14px', borderRadius: 999,
+              border: '0.5px solid #c00',
+              background: '#fff0f0',
+              color: '#c00',
+            }}
+          >
+            ▶ trailer
+          </a>
+        )}
       </div>
 
       {/* Info */}
@@ -200,13 +244,13 @@ function CarouselCard({
         <div style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500, lineHeight: 1.25, marginBottom: 3 }}>
           {film.title}
         </div>
-        <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 10, color: 'var(--ink-4)', marginBottom: isGroup ? 10 : 0 }}>
+        <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 10, color: 'var(--ink-4)', marginBottom: isGroup ? 10 : 6 }}>
           {[film.director, film.year].filter(Boolean).join(' · ')}
         </div>
 
         {/* Per-member mini scores (group only) */}
         {isGroup && Object.keys(film.memberScores).length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
             {allIds.filter(id => film.memberScores[id] != null).map(id => (
               <div key={id} style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 7.5, color: 'var(--ink-4)' }}>
@@ -220,6 +264,17 @@ function CarouselCard({
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Social proof — direct friends only */}
+        {film.seenBy?.length > 0 && (
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 7.5, color: 'var(--ink-4)', letterSpacing: '0.02em', lineHeight: 1.3 }}>
+            {film.seenBy.length === 1
+              ? `${film.seenBy[0].name.split(' ')[0]} watched this`
+              : film.seenBy.length === 2
+              ? `${film.seenBy[0].name.split(' ')[0]} + ${film.seenBy[1].name.split(' ')[0]} watched this`
+              : `${film.seenBy.length} friends watched this`}
           </div>
         )}
       </div>
@@ -395,10 +450,19 @@ function MoodFilmPanel({
   selectedForNowPlaying: boolean
 }) {
   const [expandedDim, setExpandedDim] = useState<string | null>(null)
+  const [trailerUrl, setTrailerUrl] = useState<string | null>(null)
   const poster = film.poster_path ? posterUrl(film.poster_path, 'w342') : null
   const allIds = [selfId, ...selectedFriendIds]
   const isGroup = allIds.length > 1
   const justWatchUrl = `https://www.justwatch.com/us/search?q=${encodeURIComponent(film.title)}`
+
+  useEffect(() => {
+    setTrailerUrl(null)
+    fetch(`/api/films/${film.id}/trailer`)
+      .then(r => r.json())
+      .then(d => { if (d.url) setTrailerUrl(d.url) })
+      .catch(() => {})
+  }, [film.id])
 
   const nameFor = (id: string) => {
     if (id === selfId) return selfName.split(' ')[0] || 'you'
@@ -485,6 +549,53 @@ function MoodFilmPanel({
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 600, color: 'var(--ink-2)' }}>{panelData.metacritic}</span>
                 </div>
               )}
+            </div>
+          )}
+          {trailerUrl && (
+            <a
+              href={trailerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontFamily: 'var(--mono)', fontSize: 9.5,
+                textDecoration: 'none', letterSpacing: '0.04em',
+                padding: '7px 14px', borderRadius: 999,
+                border: '0.5px solid #c00',
+                background: '#fff0f0',
+                color: '#c00',
+                marginBottom: 18,
+              }}
+            >
+              ▶ trailer
+            </a>
+          )}
+
+          {/* Seen by network */}
+          {film.seenBy?.length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
+                watched by
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {film.seenBy.slice(0, 6).map(w => (
+                  <div key={w.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontFamily: 'var(--serif-body)', fontSize: 12, color: 'var(--ink-2)' }}>
+                      {w.name.split(' ')[0]}
+                    </span>
+                    {w.stars != null && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--sun)', letterSpacing: '0.05em' }}>
+                        {'★'.repeat(w.stars)}{'☆'.repeat(5 - w.stars)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+                {film.seenBy.length > 6 && (
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 7.5, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
+                    +{film.seenBy.length - 6} more
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -763,6 +874,7 @@ export default function MoodPage() {
   const [kind, setKind]             = useState<'any' | 'movie' | 'tv'>('any')
   const [genre, setGenre]           = useState<string | null>(null)
   const [newReleases, setNewReleases] = useState(false)
+  const [haventSeen, setHaventSeen] = useState(true)
 
   // Pages of results — each page is 4 films; pageIndex is which we're viewing
   const [pages, setPages]           = useState<MoodFilm[][]>([])
@@ -887,10 +999,16 @@ export default function MoodPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           memberIds: selectedFriendIds,
-          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: buildGenreKeyword(), newReleases: newReleases || undefined },
+          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: buildGenreKeyword(), newReleases: newReleases || undefined, haventSeen },
           limit: 4, exclude: [],
         }),
       })
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('[mood/recommend] error', res.status, text)
+        setError('something went wrong — try again')
+        return
+      }
       const data = await res.json()
       if (!data.films?.length) {
         setError('nothing found — try changing the filters')
@@ -898,7 +1016,8 @@ export default function MoodPage() {
       }
       setPages([data.films as MoodFilm[]])
       setHasTasteCode(data.hasTasteCode)
-    } catch {
+    } catch (e) {
+      console.error('[mood/recommend] fetch failed', e)
       setError('something went wrong — try again')
     } finally {
       setLoading(false)
@@ -924,10 +1043,16 @@ export default function MoodPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           memberIds: selectedFriendIds,
-          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: buildGenreKeyword(), newReleases: newReleases || undefined },
+          filters: { kind: kind === 'any' ? undefined : kind, aiGenre: buildGenreKeyword(), newReleases: newReleases || undefined, haventSeen },
           limit: 4, exclude,
         }),
       })
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('[mood/recommend] error', res.status, text)
+        setError('something went wrong — try again')
+        return
+      }
       const data = await res.json()
       if (!data.films?.length) {
         setError('no more options to show')
@@ -935,7 +1060,8 @@ export default function MoodPage() {
       }
       setPages(prev => [...prev, data.films as MoodFilm[]])
       setPageIndex(prev => prev + 1)
-    } catch {
+    } catch (e) {
+      console.error('[mood/recommend] fetch failed', e)
       setError('something went wrong — try again')
     } finally {
       setLoadingMore(false)
@@ -1136,6 +1262,18 @@ export default function MoodPage() {
               new releases
             </button>
           </div>
+          <div>
+            <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', marginBottom: 7, letterSpacing: '0.1em' }}>SEEN</div>
+            <button onClick={() => setHaventSeen(v => !v)} style={{
+              padding: '5px 11px', borderRadius: 7, cursor: 'pointer',
+              fontFamily: 'var(--mono)', fontSize: 9.5, letterSpacing: '0.1em', textTransform: 'uppercase',
+              border: haventSeen ? '1px solid var(--ink)' : '0.5px solid var(--paper-edge)',
+              background: haventSeen ? 'var(--ink)' : 'transparent',
+              color: haventSeen ? 'var(--paper)' : 'var(--ink-3)',
+            }}>
+              haven&apos;t seen
+            </button>
+          </div>
         </div>
 
         {/* ── Generate button ───────────────────────────────────────────── */}
@@ -1161,11 +1299,9 @@ export default function MoodPage() {
           const currentFilms = pages[pageIndex] ?? []
           return (
             <div style={{ marginTop: 28 }}>
-              {hasTasteCode && (
-                <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', marginBottom: 14, letterSpacing: '0.12em' }}>
-                  ★ RANKED BY {allMemberIds.length > 1 ? 'CONSENSUS HARMONY SCORE' : 'TASTE MATCH'}
-                </div>
-              )}
+              <div className="t-meta" style={{ fontSize: 8, color: 'var(--ink-4)', marginBottom: 14, letterSpacing: '0.12em' }}>
+                {hasTasteCode ? `★ RANKED BY ${allMemberIds.length > 1 ? 'CONSENSUS HARMONY SCORE' : 'TASTE MATCH'}` : '★ RANKED BY QUALITY'}
+              </div>
 
               {/* 4-card grid */}
               <div style={{

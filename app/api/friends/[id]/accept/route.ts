@@ -31,10 +31,16 @@ export async function POST(
 
   // Notify the original sender that their request was accepted
   if (req?.from_user_id) {
+    const { data: acceptor } = await admin
+      .from('users')
+      .select('name')
+      .eq('id', user.id)
+      .maybeSingle()
+
     await admin.from('notifications').insert({
       user_id: req.from_user_id,
-      type: 'friend_request_accepted',
-      from_user_id: user.id,
+      type: 'friend_accepted',
+      payload: { friendId: user.id, friendName: acceptor?.name ?? 'Someone' },
     })
   }
 

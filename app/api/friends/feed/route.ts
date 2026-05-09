@@ -18,6 +18,7 @@ import { posterUrl } from '@/lib/types'
 
 export interface FeedItem {
   id: string
+  entryId: string
   type: 'watch' | 'watchlist' | 'now_playing' | 'rec'
   userId: string
   userName: string
@@ -32,6 +33,8 @@ export interface FeedItem {
   line:  string | null
   note:  string | null
   date:  string
+  reactionCount: number
+  hasLiked: boolean
 }
 
 export async function GET(req: NextRequest) {
@@ -81,7 +84,8 @@ export async function GET(req: NextRequest) {
     const date = (e.list === 'watched' ? (e.finished_at ?? e.added_at) : e.added_at) ?? new Date().toISOString()
     items.push({
       id:       `entry-${e.id}`,
-      type:     e.list as FeedItem['type'],
+      entryId:  e.id,
+      type:     (e.list === 'watched' ? 'watch' : e.list) as FeedItem['type'],
       userId:   e.user_id,
       userName: nameMap.get(e.user_id) ?? 'Friend',
       film: {
@@ -95,7 +99,64 @@ export async function GET(req: NextRequest) {
       line:  e.my_line  ?? null,
       note:  null,
       date,
+      reactionCount: 0,
+      hasLiked: false,
     })
+  }
+
+  // ── Fetch recent recommendations involving friends ───────────────────────────
+  const { data: recs } = await admin
+    .from('recommendations')
+    .select('id, from_user_id, to_user_id, note, created_at, film:film_id(id, title, year, poster_path, director)')
+    .in('from_user_id', friendIds)
+    .eq('to_user_id', user.id)
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(60)
+
+  for (const r of recs ?? []) {
+    const f = Array.isArray(r.film) ? r.film[0] : r.film
+    if (!f) continue
+    items.push({
+      id:       `rec-${r.id}`,
+      entryId:  r.id,
+      type:     'rec',
+      userId:   r.from_user_id,
+      userName: nameMap.get(r.from_user_id) ?? 'Friend',
+      film: {
+        id:          f.id,
+        title:       f.title,
+        year:        f.year ?? null,
+        poster_path: f.poster_path ? posterUrl(f.poster_path, 'w185') : null,
+        director:    f.director ?? null,
+      },
+      stars: null,
+      line:  null,
+      note:  r.note ?? null,
+      date:  r.created_at,
+      reactionCount: 0,
+      hasLiked: false,
+    })
+  }
+
+  // Batch-fetch reaction counts and current user's likes (library entries only)
+  if (items.length > 0) {
+    const entryIds = items.filter(item => item.type !== 'rec').map(item => item.entryId)
+    const [{ data: reactions }, { data: myReactions }] = await Promise.all([
+      admin.from('activity_reactions').select('entry_id').in('entry_id', entryIds).eq('type', 'like'),
+      admin.from('activity_reactions').select('entry_id').in('entry_id', entryIds).eq('user_id', user.id).eq('type', 'like'),
+    ])
+
+    const countMap = new Map<string, number>()
+    for (const r of reactions ?? []) {
+      countMap.set(r.entry_id, (countMap.get(r.entry_id) ?? 0) + 1)
+    }
+    const likedSet = new Set((myReactions ?? []).map((r: any) => r.entry_id))
+
+    for (const item of items) {
+      item.reactionCount = countMap.get(item.entryId) ?? 0
+      item.hasLiked = likedSet.has(item.entryId)
+    }
   }
 
   // Sort newest first

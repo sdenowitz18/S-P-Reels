@@ -130,7 +130,7 @@ export async function GET(
     const isMe = !theirEntries?.some(te => te.id === e.id)
     items.push({
       id:          `entry-${e.id}`,
-      type:        e.list as ActivityType,
+      type:        (e.list === 'watched' ? 'watch' : e.list) as ActivityType,
       isMe,
       userName:    isMe ? myName : theirName,
       userId:      isMe ? user.id : friendId,

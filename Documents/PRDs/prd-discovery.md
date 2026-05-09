@@ -91,13 +91,24 @@ For each candidate film:
 - Each card: poster, room score, member avatars with individual scores or color-coded agreement
 - "Generate 5 more" button appends next batch
 
+**Candidate pool — network-filtered:**
+The Mood Room does not pull from the full film database. It pulls from the set of films your friend network has actually watched. Same principle as the Network Catalog tab: every result has a human behind it, not just an algorithm.
+
+- Pool = union of all films watched by anyone in the logged-in user's friend network
+- The Consensus Harmony Score still runs on this pool — network filtering narrows the input, the algorithm still ranks within it
+- Rationale: a film someone in your network has seen is implicitly vouched for; it also means your friends can speak to it if you ask
+- The pool is pre-filtered before the Consensus Harmony Score is computed, not post-filtered from a full-catalog result set (important for performance — don't score 1,300 films and discard 1,200)
+
 **Edge cases:**
-- Only 1 person in room → acts like personal catalog (taste-score sort)
-- No one has a taste code → fall back to quality sort (compositeQuality)
+- Only 1 person in room → uses the same network pool, scored for just you
+- No friends / empty network → fall back to full catalog with a note: "Add friends to see what your network is watching — for now, showing the full catalog"
+- Network pool < 30 films → show what exists + "Your catalog grows as your network does" nudge, no silent fallback to full catalog
+- No one has a taste code → fall back to quality sort within the network pool (compositeQuality)
 - All members have very different tastes → low room scores across board; show message acknowledging difficulty and surfacing "best compromises"
 
 ### Open requirements
 - [ ] Build the Mood Room (Phase A roadmap item — PRD complete, ready to build)
+- [ ] Network-filtered candidate pool: API must accept friend network as input and pre-filter the film set before scoring
 - [ ] Room state persistence (URL params or session) so sharing a room link works
 - [ ] "Suggest to group" action: creates a rec for all room members simultaneously
 - [ ] Save room as a preset ("Movie Night with [names]")

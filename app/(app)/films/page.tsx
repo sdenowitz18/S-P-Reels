@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { FilmPanel, type PanelFilm } from './film-panel'
@@ -18,6 +19,9 @@ const NOT_FOR_ME_REASONS = [
 interface CatalogFilm extends PanelFilm {
   kind: 'movie' | 'tv'
 }
+
+interface RecSender { name: string; note: string | null }
+interface RecCatalogFilm extends CatalogFilm { recSenders: RecSender[] }
 
 /**
  * Display-only transform: stretches the algorithm's conservative 0–89 range
@@ -116,11 +120,13 @@ const overlayReasonStyle: React.CSSProperties = {
   textAlign: 'center',
 }
 
-function FilmCard({ film, onClick, large = false, onQuickAction }: {
+function FilmCard({ film, onClick, large = false, onQuickAction, friendRating, friendName }: {
   film: CatalogFilm
   onClick: () => void
   large?: boolean
   onQuickAction?: (action: 'watched' | 'watchlist' | 'dismissed', filmId: string, extra?: { stars?: number; reason?: string }) => void
+  friendRating?: number | null
+  friendName?: string
 }) {
   const [hovered, setHovered] = useState(false)
   const [overlayMode, setOverlayMode] = useState<'idle' | 'stars' | 'dismiss'>('idle')
@@ -190,7 +196,7 @@ function FilmCard({ film, onClick, large = false, onQuickAction }: {
   return (
     <button
       onClick={onClick}
-      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block' }}
     >
       {/* Poster */}
       <div
@@ -217,6 +223,19 @@ function FilmCard({ film, onClick, large = false, onQuickAction }: {
         }
         <MatchBadge score={film.matchScore} />
         {!hovered && <LibraryBadge status={film.libraryStatus} />}
+        {/* Friend rating badge — shown when a Friend Lens is active */}
+        {friendRating != null && !hovered && (
+          <div style={{
+            position: 'absolute', bottom: 6, right: 6,
+            background: 'rgba(10,8,4,0.88)', backdropFilter: 'blur(4px)',
+            borderRadius: 5, padding: '4px 7px',
+            fontFamily: 'var(--mono)', fontSize: large ? 12 : 10, fontWeight: 700,
+            color: '#f5d97a', letterSpacing: '0.02em', lineHeight: 1,
+            boxShadow: '0 1px 6px rgba(0,0,0,0.35)',
+          }}>
+            {friendName ? `${friendName.split(' ')[0]} ` : ''}{friendRating}★
+          </div>
+        )}
         {film.recommendedBy && film.recommendedBy.length > 0 && <RecDot />}
         {film.kind === 'tv' && (
           <div style={{
@@ -230,17 +249,18 @@ function FilmCard({ film, onClick, large = false, onQuickAction }: {
           </div>
         )}
 
-        {/* ── Hover overlay ── */}
+        {/* ── Hover overlay — bottom gradient only; clicking above the buttons opens the panel ── */}
         {hovered && (
           <div
-            onClick={e => e.stopPropagation()}
             style={{
-              position: 'absolute', inset: 0,
-              background: 'rgba(0,0,0,0.76)',
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              height: overlayMode === 'dismiss' ? '72%' : overlayMode === 'stars' ? '62%' : '48%',
+              background: 'linear-gradient(to top, rgba(0,0,0,0.82) 55%, rgba(0,0,0,0))',
               display: 'flex', flexDirection: 'column',
-              alignItems: 'stretch', justifyContent: 'center',
-              gap: overlayMode === 'dismiss' ? 4 : 8,
-              padding: large ? '14px 14px' : '10px 10px',
+              alignItems: 'stretch', justifyContent: 'flex-end',
+              gap: overlayMode === 'dismiss' ? 3 : 6,
+              padding: large ? '0 12px 12px' : '0 8px 8px',
+              transition: 'height 120ms ease',
             }}
           >
             {/* ─ Default: 3 action buttons ─ */}
@@ -267,31 +287,36 @@ function FilmCard({ film, onClick, large = false, onQuickAction }: {
               </>
             )}
 
-            {/* ─ Star picker ─ */}
+            {/* ─ Star picker (half-star) ─ */}
             {overlayMode === 'stars' && (
               <>
                 <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'rgba(255,255,255,0.5)', textAlign: 'center', letterSpacing: '0.06em', marginBottom: 2 }}>
                   how many stars?
                 </div>
-                <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                  {[1, 2, 3, 4, 5].map(s => (
-                    <button
-                      key={s}
-                      onClick={e => handleStarPick(e, s)}
-                      style={{
-                        background: 'rgba(255,255,255,0.10)',
-                        border: '0.5px solid rgba(255,255,255,0.20)',
-                        borderRadius: 4, color: '#f0c96a',
-                        cursor: 'pointer',
-                        fontFamily: 'var(--mono)', fontSize: large ? 11 : 9,
-                        fontWeight: 700, padding: large ? '6px 8px' : '4px 6px',
-                        flex: 1, transition: 'background 80ms',
-                      }}
-                    >
-                      {s}★
-                    </button>
-                  ))}
-                </div>
+                {([
+                  [0.5, 1, 1.5, 2, 2.5],
+                  [3, 3.5, 4, 4.5, 5],
+                ] as number[][]).map((row, ri) => (
+                  <div key={ri} style={{ display: 'flex', gap: 3, justifyContent: 'center', marginBottom: ri === 0 ? 3 : 0 }}>
+                    {row.map(s => (
+                      <button
+                        key={s}
+                        onClick={e => handleStarPick(e, s)}
+                        style={{
+                          background: 'rgba(255,255,255,0.10)',
+                          border: '0.5px solid rgba(255,255,255,0.20)',
+                          borderRadius: 4, color: '#f0c96a',
+                          cursor: 'pointer',
+                          fontFamily: 'var(--mono)', fontSize: large ? 10 : 8,
+                          fontWeight: 700, padding: large ? '5px 6px' : '3px 5px',
+                          flex: 1, transition: 'background 80ms',
+                        }}
+                      >
+                        {s % 1 === 0 ? `${s}` : `${Math.floor(s)}½`}★
+                      </button>
+                    ))}
+                  </div>
+                ))}
                 <button onClick={e => { e.stopPropagation(); setOverlayMode('idle') }} style={{ ...overlayActionStyle, fontSize: 8, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
                   ← back
                 </button>
@@ -349,23 +374,76 @@ function FilmCard({ film, onClick, large = false, onQuickAction }: {
   )
 }
 
-type Mode      = 'all' | 'new'
+type Mode      = 'network' | 'new' | 'rec'
 type MediaType = 'both' | 'movie' | 'tv'
 
+interface NetworkFriend { id: string; name: string }
+interface NetworkWatcher { id: string; name: string; stars: number | null }
+interface NetworkCatalogFilm extends CatalogFilm {
+  watchers: NetworkWatcher[]
+  watcherCount: number
+}
+
+const FRIEND_COLORS = [
+  { ink: '#c25a2a', tint: '#fdf0e8' },
+  { ink: '#2f6b82', tint: '#e6f2f7' },
+  { ink: '#4a6b3e', tint: '#eaf2e8' },
+  { ink: '#8a5a9a', tint: '#f5eef8' },
+  { ink: '#c25a6b', tint: '#fde8ec' },
+  { ink: '#6b7a2a', tint: '#f2f4e0' },
+]
+function friendColor(idx: number) { return FRIEND_COLORS[idx % FRIEND_COLORS.length] }
+
+
+function NetworkLensButton({ open, onClick }: { open: boolean; onClick: () => void }) {
+  const [tip, setTip] = useState(false)
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setTip(true)}
+        onMouseLeave={() => setTip(false)}
+        style={{
+          padding: '8px 16px', borderRadius: 999, cursor: 'pointer', border: 'none',
+          background: open ? 'var(--ink)' : 'linear-gradient(135deg, #c25a2a 0%, #8a5a9a 100%)',
+          fontFamily: 'var(--mono)', fontSize: 10,
+          color: '#fff', letterSpacing: '0.07em', fontWeight: 600,
+          transition: 'all 150ms',
+          boxShadow: open ? 'none' : '0 2px 10px rgba(194,90,42,0.3)',
+        }}
+      >★ Friend Lens</button>
+      {tip && !open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+          background: 'var(--ink)', color: 'var(--paper)',
+          borderRadius: 8, padding: '8px 12px',
+          fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.04em',
+          whiteSpace: 'nowrap', zIndex: 200, lineHeight: 1.5,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>★ Friend Lens</div>
+          <div style={{ opacity: 0.7 }}>filter to one friend&apos;s watches</div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const PAGE_SIZE = 60
 
 export default function FilmCatalogPage() {
+  const router = useRouter()
+
   // ── Two-tier state ──────────────────────────────────────────────────────────
   // pageFilms: initial ~60 films (fast first paint, full panel data)
   // indexFilms: full scored catalog for instant genre filtering (loads in bg)
   const [pageFilms, setPageFilms]       = useState<CatalogFilm[]>([])
   const [indexFilms, setIndexFilms]     = useState<CatalogFilm[] | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
-  const [loading, setLoading]           = useState(true)
+  const [loading, setLoading]           = useState(false)
   const [loadingMore, setLoadingMore]   = useState(false)
   const [indexLoading, setIndexLoading] = useState(false)
-  const [mode, setMode]                 = useState<Mode>('all')
+  const [mode, setMode]                 = useState<Mode>('network')
   const [mediaType, setMediaType]       = useState<MediaType>('both')
   const [query, setQuery]               = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
@@ -374,10 +452,45 @@ export default function FilmCatalogPage() {
   const [hasMatchScores, setHasMatchScores] = useState(false)
   const [selectedFilm, setSelectedFilm]     = useState<CatalogFilm | null>(null)
   const [dismissedIds, setDismissedIds]     = useState<Set<string>>(new Set())
+  const [recFilmsRaw, setRecFilmsRaw] = useState<RecCatalogFilm[]>([])
+  const [recLoading, setRecLoading]   = useState(false)
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageFilmMapRef = useRef<Map<string, CatalogFilm>>(new Map())
+  const indexFilmsRef  = useRef<CatalogFilm[] | null>(null)
 
-  // ── Network fetch ───────────────────────────────────────────────────────────
+  // ── Network mode state ───────────────────────────────────────────────────────
+  const [networkFilms, setNetworkFilms]   = useState<NetworkCatalogFilm[]>([])
+  const [networkLoading, setNetworkLoading] = useState(false)
+  const [networkFriends, setNetworkFriends] = useState<NetworkFriend[]>([])
+  const [lensOpen, setLensOpen]           = useState(false)
+  const [lensFriend, setLensFriend]       = useState<NetworkFriend | null>(null)
+  const [lensColorIdx, setLensColorIdx]   = useState(0)
+  const lensRef = useRef<HTMLDivElement>(null)
+
+  // ── Friend Lens: close dropdown on outside click ─────────────────────────────
+  useEffect(() => {
+    if (!lensOpen) return
+    const handler = (e: MouseEvent) => {
+      if (lensRef.current && !lensRef.current.contains(e.target as Node)) setLensOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [lensOpen])
+
+  // ── Network films fetch ──────────────────────────────────────────────────────
+  const fetchNetworkFilms = useCallback(async () => {
+    setNetworkLoading(true)
+    try {
+      const data = await fetch('/api/friends/network-films').then(r => r.json())
+      setNetworkFriends(data.friends ?? [])
+      setNetworkFilms((data.films ?? []) as NetworkCatalogFilm[])
+      if ((data.films ?? []).some((f: NetworkCatalogFilm) => f.matchScore != null)) setHasMatchScores(true)
+    } finally {
+      setNetworkLoading(false)
+    }
+  }, [])
+
+  // ── Catalog fetch ────────────────────────────────────────────────────────────
   // For searches: server-side full-text fetch (index doesn't support text search)
   // For browsing: fast initial 60 + background full index for instant filters
   const fetchFilms = useCallback(async (q: string, m: Mode) => {
@@ -441,24 +554,110 @@ export default function FilmCatalogPage() {
     }
   }, [])
 
+  // Keep ref in sync so rec-mode effects can read indexFilms without adding it as a dep
+  useEffect(() => { indexFilmsRef.current = indexFilms }, [indexFilms])
+
+  const fetchRecs = useCallback(async () => {
+    setRecLoading(true)
+    try {
+      const data = await fetch('/api/recommendations/inbox').then(r => r.json())
+      type RecRow = {
+        film_id: string; note: string | null
+        film: { id: string; title: string; year: number | null; poster_path: string | null; director: string | null }
+        from_user: { id: string; name: string }
+      }
+      const recs: RecRow[] = data.recs ?? []
+      const filmMap = new Map<string, { film: RecRow['film']; senders: RecSender[] }>()
+      for (const rec of recs) {
+        if (!filmMap.has(rec.film_id)) filmMap.set(rec.film_id, { film: rec.film, senders: [] })
+        filmMap.get(rec.film_id)!.senders.push({ name: rec.from_user.name, note: rec.note })
+      }
+      setRecFilmsRaw(Array.from(filmMap.values()).map(({ film, senders }) => ({
+        id: film.id, title: film.title, year: film.year, poster_path: film.poster_path,
+        director: film.director, kind: 'movie' as const, matchScore: null,
+        libraryStatus: null, recommendedBy: senders.map(s => s.name),
+        genres: [], aiGenres: [], dimBreakdown: [], synopsis: null,
+        tmdb_vote_average: null, tasteScore: null, compositeQuality: null,
+        recSenders: senders,
+      } as unknown as RecCatalogFilm)))
+    } finally {
+      setRecLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => setDebouncedQuery(query), 280)
   }, [query])
 
-  // Re-fetch only when search query or mode changes
+  // Network fetch — fires once on mount (shared pool for both 'network' and 'all' modes)
   useEffect(() => {
-    fetchFilms(debouncedQuery, mode)
+    fetchNetworkFilms()
+  }, [fetchNetworkFilms])
+
+  // Catalog fetch — only for new releases (network + all reuse networkFilms pool)
+  useEffect(() => {
+    if (mode === 'new') fetchFilms(debouncedQuery, mode)
   }, [debouncedQuery, mode, fetchFilms])
 
+  // Rec fetch — fires when mode switches to rec
+  useEffect(() => {
+    if (mode === 'rec') fetchRecs()
+  }, [mode, fetchRecs])
+
+  // Background index load when in rec mode — needed for genre/kind/matchScore enrichment
+  useEffect(() => {
+    if (mode !== 'rec' || indexFilmsRef.current) return
+    setIndexLoading(true)
+    fetch('/api/films/index', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        const raw: CatalogFilm[] = data.index ?? []
+        setIndexFilms(raw)
+        if (data.hasMatchScores != null) setHasMatchScores(data.hasMatchScores)
+      })
+      .catch(() => {})
+      .finally(() => setIndexLoading(false))
+  }, [mode])
+
+  // Rec films enriched with index data (genre / kind / matchScore)
+  const recEnrichedFilms = useMemo<RecCatalogFilm[]>(() => {
+    if (!recFilmsRaw.length) return recFilmsRaw
+    const idxMap = new Map((indexFilms ?? []).map(f => [f.id, f]))
+    return recFilmsRaw.map(raw => {
+      const idx = idxMap.get(raw.id)
+      return idx ? { ...idx, recSenders: raw.recSenders } as RecCatalogFilm : raw
+    })
+  }, [recFilmsRaw, indexFilms])
+
   // ── Source of truth ─────────────────────────────────────────────────────────
-  // While searching: pageFilms (server-side results)
-  // While browsing: indexFilms once loaded (all films, instant filters),
-  //                 otherwise pageFilms (initial 60, fast first paint)
+  // network + all: networkFilms pool (any user's watched films), client-side search
+  //   network adds friend lens + attribution; all is the same pool, no social layer
+  // new:           pageFilms / indexFilms (TMDB new releases, separate fetch)
+  // rec:           recEnrichedFilms
   const allFilms = useMemo(() => {
+    if (mode === 'network') {
+      let result: NetworkCatalogFilm[] = networkFilms
+      if (lensFriend) {
+        result = result.filter(f => f.watchers.some((w: NetworkWatcher) => w.id === lensFriend.id))
+      }
+      if (debouncedQuery) {
+        const q = debouncedQuery.toLowerCase()
+        result = result.filter(f => f.title.toLowerCase().includes(q))
+      }
+      return result as CatalogFilm[]
+    }
+    if (mode === 'rec') {
+      if (debouncedQuery) {
+        const q = debouncedQuery.toLowerCase()
+        return recEnrichedFilms.filter(f => f.title.toLowerCase().includes(q))
+      }
+      return recEnrichedFilms
+    }
+    // new releases
     if (debouncedQuery) return pageFilms
     return indexFilms ?? pageFilms
-  }, [debouncedQuery, indexFilms, pageFilms])
+  }, [mode, networkFilms, lensFriend, recEnrichedFilms, debouncedQuery, indexFilms, pageFilms])
 
   // ── Client-side filtering — instant, no network ─────────────────────────────
   const filteredFilms = useMemo(() => {
@@ -506,6 +705,7 @@ export default function FilmCatalogPage() {
   const handleLibraryChange = (filmId: string, status: CatalogFilm['libraryStatus']) => {
     setPageFilms(prev  => prev.map(f => f.id === filmId ? { ...f, libraryStatus: status } : f))
     setIndexFilms(prev => prev ? prev.map(f => f.id === filmId ? { ...f, libraryStatus: status } : f) : prev)
+    setNetworkFilms(prev => prev.map(f => f.id === filmId ? { ...f, libraryStatus: status } : f))
     if (selectedFilm?.id === filmId) setSelectedFilm(prev => prev ? { ...prev, libraryStatus: status } : prev)
   }
 
@@ -552,6 +752,63 @@ export default function FilmCatalogPage() {
     <AppShell active="films">
       <div style={{ padding: 'clamp(28px,5vw,56px) clamp(16px,5vw,48px) 100px', maxWidth: 1200, margin: '0 auto' }}>
 
+        {/* Friend Lens sticky indicator */}
+        {mode === 'network' && lensFriend && (
+          <div style={{
+            position: 'fixed', top: 52, right: 24, zIndex: 80,
+            background: friendColor(lensColorIdx).ink,
+            color: '#fff',
+            display: 'flex', alignItems: 'center', gap: 10,
+            fontFamily: 'var(--mono)', fontSize: 10, letterSpacing: '0.07em',
+            padding: '8px 14px 8px 12px',
+            borderRadius: 999,
+            boxShadow: `0 2px 16px ${friendColor(lensColorIdx).ink}55, 0 1px 4px rgba(0,0,0,0.18)`,
+          }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'rgba(255,255,255,0.7)', flexShrink: 0, display: 'inline-block' }} />
+            <span>Lens: {lensFriend.name.split(' ')[0]}</span>
+            <button
+              onClick={() => { setLensFriend(null) }}
+              style={{
+                background: 'rgba(255,255,255,0.2)', border: 'none',
+                borderRadius: '50%', width: 18, height: 18,
+                cursor: 'pointer', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', color: '#fff', fontSize: 11, lineHeight: 1,
+                marginLeft: 2, padding: 0,
+              }}
+            >×</button>
+          </div>
+        )}
+
+        {/* Friend Lens top banner */}
+        {mode === 'network' && lensFriend && (
+          <div style={{
+            margin: 'clamp(-28px,-5vw,-56px) clamp(-16px,-5vw,-48px) 36px',
+            padding: '14px clamp(16px,5vw,48px)',
+            background: `linear-gradient(135deg, ${friendColor(lensColorIdx).ink} 0%, ${friendColor(lensColorIdx).ink}cc 100%)`,
+            color: '#fff',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.12em', opacity: 0.7, marginBottom: 3 }}>★ FRIEND LENS</div>
+              <div style={{ fontFamily: 'var(--serif-display)', fontSize: 16, fontWeight: 500, lineHeight: 1.1 }}>
+                {lensFriend.name}&apos;s watches
+              </div>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 9, opacity: 0.65, marginTop: 3, letterSpacing: '0.04em' }}>
+                films {lensFriend.name.split(' ')[0]} has seen
+              </div>
+            </div>
+            <button
+              onClick={() => { setLensFriend(null) }}
+              style={{
+                marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none',
+                borderRadius: 999, color: '#fff', cursor: 'pointer',
+                fontFamily: 'var(--mono)', fontSize: 9, padding: '6px 12px',
+                letterSpacing: '0.06em', flexShrink: 0,
+              }}
+            >exit lens ×</button>
+          </div>
+        )}
+
         {/* Header */}
         <div style={{ marginBottom: 28 }}>
           <div className="t-meta" style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10 }}>★ CATALOG</div>
@@ -562,10 +819,10 @@ export default function FilmCatalogPage() {
                 : <>the <span style={{ fontStyle: 'italic', fontWeight: 300, color: 'var(--s-ink)' }}>catalog.</span></>
               }
             </h1>
-            {!loading && (
+            {!(mode === 'rec' ? recLoading : loading) && (
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', paddingBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                 {undismissedFilms.length.toLocaleString()} titles
-                {indexLoading && !debouncedQuery && (
+                {indexLoading && !debouncedQuery && mode !== 'rec' && (
                   <span style={{ fontSize: 8, letterSpacing: '0.06em', opacity: 0.5, fontStyle: 'italic' }}>indexing…</span>
                 )}
               </div>
@@ -617,27 +874,101 @@ export default function FilmCatalogPage() {
             ))}
           </div>
 
-          {/* Mode: All | New Releases */}
-          <div style={{ display: 'flex', gap: 0, background: 'var(--paper-2)', borderRadius: 999, padding: 2, flexShrink: 0 }}>
-            {([
-              { key: 'all' as Mode, label: 'all titles' },
-              { key: 'new' as Mode, label: 'new releases' },
-            ]).map(opt => (
-              <button
-                key={opt.key}
-                onClick={() => setMode(opt.key)}
-                style={{
-                  padding: '6px 14px', borderRadius: 999, cursor: 'pointer', border: 'none',
-                  background: mode === opt.key ? 'var(--ink)' : 'transparent',
-                  color: mode === opt.key ? 'var(--paper)' : 'var(--ink-3)',
-                  fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.08em',
-                  textTransform: 'uppercase', transition: 'all 120ms',
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {/* New Releases + Recommended toggles */}
+          {(['new', 'rec'] as Mode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => { setMode(mode === m ? 'network' : m); setLensFriend(null) }}
+              style={{
+                padding: '6px 14px', borderRadius: 999, cursor: 'pointer', flexShrink: 0,
+                border: mode === m ? 'none' : '0.5px solid var(--paper-edge)',
+                background: mode === m ? 'var(--ink)' : 'var(--paper-2)',
+                color: mode === m ? 'var(--paper)' : 'var(--ink-3)',
+                fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.08em',
+                textTransform: 'uppercase', transition: 'all 120ms',
+              }}
+            >
+              {m === 'new' ? 'new releases' : 'recommended'}
+            </button>
+          ))}
+
+          {/* Friend Lens — only in default (network) mode */}
+          {mode === 'network' && (
+          <div ref={lensRef} style={{ position: 'relative', flexShrink: 0 }}>
+            {lensFriend ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 0,
+                border: `1.5px solid ${friendColor(lensColorIdx).ink}`,
+                borderRadius: 999, overflow: 'hidden',
+              }}>
+                <div style={{
+                  padding: '7px 14px',
+                  background: friendColor(lensColorIdx).ink,
+                  fontFamily: 'var(--mono)', fontSize: 10,
+                  color: '#fff', letterSpacing: '0.07em', fontWeight: 600,
+                }}>
+                  ★ {lensFriend.name.split(' ')[0]}
+                </div>
+                <button
+                  onClick={() => { setLensFriend(null) }}
+                  style={{
+                    background: friendColor(lensColorIdx).tint, border: 'none',
+                    padding: '7px 11px', cursor: 'pointer',
+                    color: friendColor(lensColorIdx).ink, fontSize: 13, lineHeight: 1,
+                  }}
+                >×</button>
+              </div>
+            ) : (
+              <NetworkLensButton open={lensOpen} onClick={() => setLensOpen(o => !o)} />
+            )}
+
+            {/* Friend picker dropdown */}
+            {lensOpen && mode === 'network' && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                  minWidth: 220, zIndex: 100,
+                  background: 'var(--paper)', border: '0.5px solid var(--paper-edge)',
+                  borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{ padding: '10px 16px 8px', borderBottom: '0.5px solid var(--paper-edge)', fontFamily: 'var(--mono)', fontSize: 8.5, color: 'var(--ink-4)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    filter to one friend
+                  </div>
+                  {networkFriends.length === 0 ? (
+                    <div style={{ padding: '14px 16px', fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)' }}>no friends yet</div>
+                  ) : networkFriends.map((f, i) => {
+                    const color = friendColor(i)
+                    const count = networkFilms.filter(film => film.watchers.some((w: NetworkWatcher) => w.id === f.id)).length
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => { setLensFriend(f); setLensColorIdx(i); setLensOpen(false) }}
+                        style={{
+                          width: '100%', textAlign: 'left',
+                          padding: '11px 16px',
+                          border: 'none',
+                          borderBottom: i < networkFriends.length - 1 ? '0.5px solid var(--paper-edge)' : 'none',
+                          background: 'none', cursor: 'pointer',
+                          fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500,
+                          color: 'var(--ink)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                          transition: 'background 120ms',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = color.tint }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color.ink, flexShrink: 0, display: 'inline-block' }} />
+                          {f.name}
+                        </div>
+                        <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)' }}>{count}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Genre filter — two-level pills */}
@@ -709,14 +1040,64 @@ export default function FilmCatalogPage() {
         </div>
 
         {/* Grid */}
-        {loading ? (
+        {(mode === 'network' ? networkLoading : mode === 'rec' ? recLoading : loading) ? (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
             <LetterLoader label="loading" />
           </div>
+        ) : mode === 'network' && networkFriends.length === 0 ? (
+          <div style={{ maxWidth: 400, marginTop: 24 }}>
+            <p style={{ fontStyle: 'italic', fontSize: 15, color: 'var(--ink-2)', fontFamily: 'var(--serif-italic)', lineHeight: 1.6, margin: '0 0 20px' }}>
+              add a friend to fill up your catalog — you&apos;ll see everything they&apos;ve watched, ranked for your taste.
+            </p>
+            <button
+              onClick={() => router.push('/friends')}
+              className="btn"
+              style={{ padding: '11px 22px', fontSize: 13, borderRadius: 999 }}
+            >
+              add a friend &rarr;
+            </button>
+          </div>
         ) : undismissedFilms.length === 0 ? (
           <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
-            {activeGroup || activeKeyword ? 'no titles match this genre filter.' : mode === 'new' ? 'no recent releases found.' : 'no titles found.'}
+            {mode === 'network' && lensFriend
+              ? `${lensFriend.name.split(' ')[0]} hasn't logged anything yet.`
+              : mode === 'network'
+                ? "your friends haven't logged any films yet."
+              : mode === 'rec'
+                ? 'no recommendations yet. ask a friend to send you something.'
+                : activeGroup || activeKeyword
+                  ? 'no titles match this genre filter.'
+                  : mode === 'new'
+                    ? 'no recent releases found.'
+                    : 'no titles found.'}
           </p>
+        ) : mode === 'rec' ? (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+            gap: 16,
+          }}>
+            {(undismissedFilms as RecCatalogFilm[]).map(film => (
+              <div key={film.id}>
+                <FilmCard film={film} onClick={() => setSelectedFilm(film)} onQuickAction={handleQuickAction} />
+                <div style={{
+                  fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--ink-4)',
+                  marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  from {film.recSenders.map(s => s.name).join(', ')}
+                </div>
+                {film.recSenders[0]?.note && (
+                  <div style={{
+                    fontSize: 9, fontFamily: 'var(--serif-italic)', fontStyle: 'italic',
+                    color: 'var(--ink-4)', marginTop: 1, overflow: 'hidden',
+                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    &ldquo;{film.recSenders[0].note}&rdquo;
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         ) : (
           <>
             {/* Top picks — larger hero row (first 4, only when match scores exist) */}
@@ -730,9 +1111,19 @@ export default function FilmCatalogPage() {
                   gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
                   gap: 18, marginBottom: 32,
                 }}>
-                  {visibleFilms.slice(0, 4).map(film => (
-                    <FilmCard key={film.id} film={film} onClick={() => setSelectedFilm(film)} large onQuickAction={handleQuickAction} />
-                  ))}
+                  {visibleFilms.slice(0, 4).map(film => {
+                    const nf = mode === 'network' ? film as NetworkCatalogFilm : null
+                    const fr = lensFriend ? nf?.watchers?.find(w => w.id === lensFriend.id)?.stars ?? null : undefined
+                    const attribution = (mode === 'network' && !lensFriend && nf?.watchers?.length)
+                      ? nf.watchers.slice(0, 3).map(w => w.stars != null ? `${w.name.split(' ')[0]} ${w.stars}★` : w.name.split(' ')[0]).join(' · ')
+                      : null
+                    return (
+                      <div key={film.id}>
+                        <FilmCard film={film} onClick={() => setSelectedFilm(film)} large onQuickAction={handleQuickAction} friendRating={fr} friendName={lensFriend?.name} />
+                        {attribution && <div style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--ink-4)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attribution}</div>}
+                      </div>
+                    )
+                  })}
                 </div>
                 {visibleFilms.length > 4 && (
                   <div className="t-meta" style={{ fontSize: 9, color: 'var(--ink-4)', letterSpacing: '0.10em', marginBottom: 12 }}>
@@ -748,9 +1139,19 @@ export default function FilmCatalogPage() {
               gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
               gap: 16,
             }}>
-              {(hasMatchScores ? visibleFilms.slice(4) : visibleFilms).map(film => (
-                <FilmCard key={film.id} film={film} onClick={() => setSelectedFilm(film)} onQuickAction={handleQuickAction} />
-              ))}
+              {(hasMatchScores ? visibleFilms.slice(4) : visibleFilms).map(film => {
+                const nf = mode === 'network' ? film as NetworkCatalogFilm : null
+                const fr = lensFriend ? nf?.watchers?.find(w => w.id === lensFriend.id)?.stars ?? null : undefined
+                const attribution = (mode === 'network' && !lensFriend && nf?.watchers?.length)
+                  ? nf.watchers.slice(0, 3).map(w => w.stars != null ? `${w.name.split(' ')[0]} ${w.stars}★` : w.name.split(' ')[0]).join(' · ')
+                  : null
+                return (
+                  <div key={film.id}>
+                    <FilmCard film={film} onClick={() => setSelectedFilm(film)} onQuickAction={handleQuickAction} friendRating={fr} friendName={lensFriend?.name} />
+                    {attribution && <div style={{ fontSize: 9, fontFamily: 'var(--mono)', color: 'var(--ink-4)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attribution}</div>}
+                  </div>
+                )
+              })}
             </div>
 
             {hasMore && (

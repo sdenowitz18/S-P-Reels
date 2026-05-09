@@ -1038,13 +1038,16 @@ export default function RatePage({ params }: { params: Promise<{ slug: string }>
                               onClick={async () => {
                                 if (!film?.id || sentRec[f.id] || sendingRec[f.id]) return
                                 setSendingRec(prev => ({ ...prev, [f.id]: true }))
-                                await fetch('/api/recommendations', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ filmId: film.id, toUserId: f.id, note: '' }),
-                                })
-                                setSendingRec(prev => ({ ...prev, [f.id]: false }))
-                                setSentRec(prev => ({ ...prev, [f.id]: true }))
+                                try {
+                                  const res = await fetch('/api/recommendations', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ filmId: String(film.id), toUserId: f.id, note: '' }),
+                                  })
+                                  if (res.ok) setSentRec(prev => ({ ...prev, [f.id]: true }))
+                                } finally {
+                                  setSendingRec(prev => ({ ...prev, [f.id]: false }))
+                                }
                               }}
                               disabled={sentRec[f.id] || sendingRec[f.id]}
                               style={{

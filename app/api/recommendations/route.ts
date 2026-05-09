@@ -26,11 +26,13 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Create notification for recipient
+  const { data: sender } = await admin.from('users').select('name').eq('id', user.id).maybeSingle()
   await admin.from('notifications').insert({
     user_id: toUserId,
     type: 'rec_received',
     rec_id: rec.id,
     from_user_id: user.id,
+    payload: { fromUserId: user.id, fromName: sender?.name ?? 'Someone', filmId: filmId },
   })
 
   return NextResponse.json({ ok: true, rec })

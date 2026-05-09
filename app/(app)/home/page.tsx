@@ -4,8 +4,9 @@ import { AppShell } from '@/components/app-shell'
 import { useIsMobile } from '@/lib/use-is-mobile'
 import useSWR from 'swr'
 import Image from 'next/image'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { FeedItem } from '@/app/api/friends/feed/route'
+import { FilmPanel, type PanelFilm } from '@/app/(app)/films/film-panel'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
@@ -18,6 +19,14 @@ interface ResumeSession {
 }
 
 interface Friend { id: string; name: string }
+
+interface Notification {
+  id: string
+  type: string
+  payload: Record<string, string>
+  read: boolean
+  created_at: string
+}
 
 // Assign a stable color to each friend based on their position in the list
 const FRIEND_COLORS = [
@@ -82,7 +91,30 @@ export default function HomePage() {
   const router = useRouter()
   const isMobile = useIsMobile()
   const day = new Date().toLocaleDateString('en', { weekday: 'long' }).toLowerCase()
-  const [activeFriend, setActiveFriend] = useState<string | null>(null) // null = All
+  const [activeFriend, setActiveFriend] = useState<string | null>(null)
+  const [activeType, setActiveType] = useState<'all' | 'watch' | 'rec' | 'watchlist'>('all')
+  const [selectedFilm, setSelectedFilm] = useState<PanelFilm | null>(null)
+  const [likeState, setLikeState] = useState<Record<string, { count: number; liked: boolean }>>({})
+
+  // Enrich selectedFilm with full panel data when it's first opened
+  useEffect(() => {
+    if (!selectedFilm) return
+    if (selectedFilm.dimBreakdown && selectedFilm.dimBreakdown.length > 0) return
+    if (selectedFilm.synopsis != null) return
+
+    let cancelled = false
+    fetch(`/api/films/${selectedFilm.id}/panel`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return
+        setSelectedFilm(prev =>
+          prev?.id === selectedFilm.id ? { ...prev, ...data } : prev
+        )
+      })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [selectedFilm?.id])
 
   const { data: resumeData } = useSWR<{ session: ResumeSession | null }>('/api/onboarding/resume', fetcher)
   const resumeSession = resumeData?.session ?? null
@@ -91,12 +123,74 @@ export default function HomePage() {
   const friends = feedData?.friends ?? []
   const allItems = feedData?.items ?? []
 
+  const { data: notifData, mutate: mutateNotifs } = useSWR<{ notifications: Notification[] }>('/api/notifications', fetcher)
+  const notifications = notifData?.notifications ?? []
+
   // Build a stable color map: friendId → color
   const colorMap = new Map(friends.map((f, i) => [f.id, friendColor(i)]))
 
-  const visibleItems = activeFriend
-    ? allItems.filter(item => item.userId === activeFriend)
-    : allItems
+  const visibleItems = allItems.filter(item => {
+    if (activeFriend && item.userId !== activeFriend) return false
+    if (activeType === 'watch') return item.type === 'watch'
+    if (activeType === 'rec') return item.type === 'rec'
+    if (activeType === 'watchlist') return item.type === 'watchlist' || item.type === 'now_playing'
+    return true
+  })
+
+  function dismissNotif(id: string) {
+    mutateNotifs(
+      prev => prev ? { notifications: prev.notifications.filter(n => n.id !== id) } : prev,
+      false
+    )
+    fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [id] }),
+    })
+  }
+
+  function handleNotifClick(notif: Notification) {
+    dismissNotif(notif.id)
+    if (notif.type === 'friend_accepted') {
+      router.push(`/friends/${notif.payload.friendId}/compatibility`)
+    } else if (notif.type === 'rec_received') {
+      router.push(`/friends/${notif.payload.fromUserId}`)
+    }
+  }
+
+  function notifCopy(notif: Notification): string | null {
+    if (notif.type === 'friend_accepted') {
+      return `${notif.payload.friendName} accepted your friend request. See how your tastes line up →`
+    }
+    if (notif.type === 'activity_liked') {
+      return `${notif.payload.likerName} liked your log of ${notif.payload.filmTitle}`
+    }
+    if (notif.type === 'rec_received') {
+      const name = notif.payload.fromName
+      return name ? `${name} sent you a recommendation →` : 'you have a new recommendation →'
+    }
+    return null
+  }
+
+  async function handleLike(item: FeedItem) {
+    const current = likeState[item.id] ?? { count: item.reactionCount, liked: item.hasLiked }
+    const newLiked = !current.liked
+    const newCount = newLiked ? current.count + 1 : Math.max(0, current.count - 1)
+
+    setLikeState(prev => ({ ...prev, [item.id]: { count: newCount, liked: newLiked } }))
+
+    try {
+      const res = await fetch(`/api/library/${item.entryId}/react`, {
+        method: newLiked ? 'POST' : 'DELETE',
+        headers: newLiked ? { 'Content-Type': 'application/json' } : {},
+        body: newLiked ? JSON.stringify({ type: 'like' }) : undefined,
+      })
+      const data = await res.json()
+      setLikeState(prev => ({ ...prev, [item.id]: { count: data.count, liked: data.liked } }))
+    } catch {
+      setLikeState(prev => ({ ...prev, [item.id]: current }))
+    }
+  }
 
   return (
     <AppShell active="home">
@@ -201,7 +295,7 @@ export default function HomePage() {
           ) : (
             <>
               {/* Friend filter chips */}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                 <button
                   onClick={() => setActiveFriend(null)}
                   style={{
@@ -237,6 +331,40 @@ export default function HomePage() {
                 })}
               </div>
 
+              {/* Type filter chips */}
+              {(() => {
+                const types: { key: typeof activeType; label: string }[] = [
+                  { key: 'all',      label: 'ALL ACTIVITY' },
+                  { key: 'watch',    label: 'WATCHED' },
+                  { key: 'rec',      label: 'REC\'D TO ME' },
+                  { key: 'watchlist', label: 'SAVED' },
+                ]
+                return (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+                    {types.map(({ key, label }) => {
+                      const isActive = activeType === key
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setActiveType(key)}
+                          style={{
+                            padding: '4px 12px', borderRadius: 999, cursor: 'pointer',
+                            border: `0.5px solid ${isActive ? 'var(--ink-3)' : 'var(--paper-edge)'}`,
+                            background: isActive ? 'var(--paper-2)' : 'transparent',
+                            color: isActive ? 'var(--ink)' : 'var(--ink-4)',
+                            fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.07em',
+                            transition: 'all 120ms',
+                          }}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+
+
               {/* Activity feed */}
               {visibleItems.length === 0 ? (
                 <div style={{ padding: '20px 0', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
@@ -246,20 +374,101 @@ export default function HomePage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {visibleItems.slice(0, 20).map(item => {
                     const color = colorMap.get(item.userId) ?? FRIEND_COLORS[0]
+                    const ls = likeState[item.id] ?? { count: item.reactionCount, liked: item.hasLiked }
+                    const isRec = item.type === 'rec'
+
+                    if (isRec) {
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => router.push('/recommended')}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12,
+                            padding: '12px 10px',
+                            marginBottom: 4,
+                            borderRadius: 8,
+                            background: color.tint,
+                            border: `1px solid ${color.ink}30`,
+                            cursor: 'pointer',
+                            transition: 'border-color 120ms',
+                          }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${color.ink}70` }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = `${color.ink}30` }}
+                        >
+                          {/* Accent bar */}
+                          <div style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: color.ink, flexShrink: 0 }} />
+
+                          {/* Poster */}
+                          {item.film.poster_path ? (
+                            <div style={{ width: 32, height: 48, borderRadius: 3, overflow: 'hidden', flexShrink: 0, background: 'var(--paper-edge)' }}>
+                              <Image src={item.film.poster_path} alt={item.film.title} width={32} height={48} style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
+                            </div>
+                          ) : (
+                            <div style={{ width: 32, height: 48, borderRadius: 3, background: 'var(--paper-edge)', flexShrink: 0 }} />
+                          )}
+
+                          {/* Info */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                              <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: color.ink, fontWeight: 600, letterSpacing: '0.06em' }}>
+                                {item.userName.split(' ')[0].toUpperCase()}
+                              </span>
+                              <span style={{
+                                fontFamily: 'var(--mono)', fontSize: 8, letterSpacing: '0.07em',
+                                color: color.ink, background: `${color.ink}18`,
+                                padding: '2px 6px', borderRadius: 999,
+                              }}>→ REC</span>
+                            </div>
+                            <div style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {item.film.title}
+                              {item.film.year ? <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', fontWeight: 400, marginLeft: 6 }}>{item.film.year}</span> : null}
+                            </div>
+                            {item.note && (
+                              <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-3)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                &ldquo;{item.note}&rdquo;
+                              </div>
+                            )}
+                          </div>
+
+                          {/* View CTA */}
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: color.ink, letterSpacing: '0.06em', flexShrink: 0, opacity: 0.7 }}>
+                            view →
+                          </div>
+
+                          {/* Date */}
+                          <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', flexShrink: 0, letterSpacing: '0.03em' }}>
+                            {new Date(item.date).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                          </div>
+                        </div>
+                      )
+                    }
+
                     return (
-                      <button
+                      <div
                         key={item.id}
-                        onClick={() => router.push(`/films?panel=${item.film.id}`)}
+                        onClick={() => setSelectedFilm({
+                          id:              item.film.id,
+                          title:           item.film.title,
+                          year:            item.film.year,
+                          poster_path:     item.film.poster_path,
+                          director:        item.film.director,
+                          kind:            'movie',
+                          genres:          [],
+                          aiGenres:        [],
+                          matchScore:      null,
+                          tasteScore:      null,
+                          compositeQuality: null,
+                          libraryStatus:   null,
+                        })}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 12,
                           padding: '10px 0',
-                          background: 'none', border: 'none',
                           borderBottom: '0.5px solid var(--paper-edge)',
-                          cursor: 'pointer', textAlign: 'left', width: '100%',
+                          cursor: 'pointer',
                           transition: 'background 120ms',
                         }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--paper-2)' }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--paper-2)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'none' }}
                       >
                         {/* Color bar */}
                         <div style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: color.ink, flexShrink: 0 }} />
@@ -280,7 +489,7 @@ export default function HomePage() {
                               {item.userName.split(' ')[0].toUpperCase()}
                             </span>
                             <span style={{ fontFamily: 'var(--mono)', fontSize: 9, color: 'var(--ink-4)', letterSpacing: '0.04em' }}>
-                              {item.type === 'watch' ? 'watched' : item.type === 'watchlist' ? 'saved' : item.type === 'now_playing' ? 'watching' : 'recommended'}
+                              {item.type === 'watch' ? 'watched' : item.type === 'watchlist' ? 'saved' : 'watching'}
                             </span>
                           </div>
                           <div style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -289,7 +498,7 @@ export default function HomePage() {
                           </div>
                           {item.line && (
                             <div style={{ fontFamily: 'var(--serif-italic)', fontStyle: 'italic', fontSize: 11, color: 'var(--ink-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              "{item.line}"
+                              &ldquo;{item.line}&rdquo;
                             </div>
                           )}
                         </div>
@@ -301,11 +510,29 @@ export default function HomePage() {
                           </div>
                         )}
 
+                        {/* Like button */}
+                        <button
+                          onClick={e => { e.stopPropagation(); handleLike(item) }}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 3,
+                            flexShrink: 0, padding: '2px 4px',
+                            color: ls.liked ? 'var(--s-ink)' : 'var(--ink-4)',
+                            fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: '0.04em',
+                            transition: 'color 120ms',
+                          }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--s-ink)' }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = ls.liked ? 'var(--s-ink)' : 'var(--ink-4)' }}
+                        >
+                          <span style={{ fontSize: 11 }}>{ls.liked ? '♥' : '♡'}</span>
+                          {ls.count > 0 && <span>{ls.count}</span>}
+                        </button>
+
                         {/* Date */}
                         <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'var(--ink-4)', flexShrink: 0, letterSpacing: '0.03em' }}>
                           {new Date(item.date).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
                         </div>
-                      </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -314,6 +541,16 @@ export default function HomePage() {
           )}
         </div>
       </div>
+
+      {selectedFilm && (
+        <FilmPanel
+          film={selectedFilm}
+          onClose={() => setSelectedFilm(null)}
+          onLibraryChange={(filmId, status) =>
+            setSelectedFilm(prev => prev?.id === filmId ? { ...prev, libraryStatus: status } : prev)
+          }
+        />
+      )}
     </AppShell>
   )
 }

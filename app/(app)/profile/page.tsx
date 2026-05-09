@@ -767,7 +767,35 @@ export default function ProfilePage() {
 
         {!loading && taste && (
           <>
-            {!taste.tasteCode && (
+            {!taste.tasteCode && taste.filmCount === 0 && (
+              <div style={{ marginBottom: 48, maxWidth: 520 }}>
+                <p style={{ margin: '0 0 10px', fontFamily: 'var(--serif-display)', fontSize: 22, fontWeight: 400, lineHeight: 1.3, color: 'var(--ink)', fontStyle: 'italic' }}>
+                  your profile fills up here once you log films.
+                </p>
+                <p style={{ margin: '0 0 28px', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-3)', fontFamily: 'var(--serif-italic)', lineHeight: 1.65 }}>
+                  start with onboarding — rate a few films and we'll map your taste code, unlock match scores, and personalise your catalog.
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={resumeTasteSetup}
+                    disabled={resumingSetup}
+                    className="btn"
+                    style={{ padding: '11px 22px', fontSize: 13, borderRadius: 999, opacity: resumingSetup ? 0.6 : 1 }}
+                  >
+                    {resumingSetup ? 'loading…' : 'take the taste interview →'}
+                  </button>
+                  <button
+                    onClick={() => router.push('/import')}
+                    className="btn btn-soft"
+                    style={{ padding: '11px 22px', fontSize: 13, borderRadius: 999 }}
+                  >
+                    import from Letterboxd →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!taste.tasteCode && taste.filmCount > 0 && (
               <div style={{ marginBottom: 48, padding: '24px 28px', background: 'var(--bone)', borderRadius: 14, border: '0.5px solid var(--paper-edge)', maxWidth: 520 }}>
                 <div className="t-meta" style={{ fontSize: 9, color: 'var(--s-ink)', marginBottom: 10 }}>★ TASTE PROFILE</div>
                 <p style={{ margin: '0 0 18px', fontStyle: 'italic', fontSize: 14, color: 'var(--ink-2)', fontFamily: 'var(--serif-italic)', lineHeight: 1.65 }}>

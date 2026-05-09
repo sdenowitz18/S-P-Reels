@@ -7,6 +7,17 @@
   50% { opacity: 0.4; }
 }
 
+@keyframes lens-pulse {
+  0%   { box-shadow: 0 0 0 0px rgba(47, 107, 130, 0.7); border-color: var(--p-ink); color: var(--p-ink); }
+  50%  { box-shadow: 0 0 0 8px rgba(47, 107, 130, 0);   border-color: var(--p-ink); color: var(--p-ink); }
+  60%  { box-shadow: 0 0 0 0px rgba(47, 107, 130, 0);   border-color: var(--paper-edge); }
+  100% { box-shadow: 0 0 0 0px rgba(47, 107, 130, 0);   border-color: var(--paper-edge); }
+}
+
+.lens-pulse {
+  animation: lens-pulse 1.2s ease-out 3;
+}
+
 /* ── Responsive utilities ───────────────────────────────── */
 @media (max-width: 767px) {
   .mobile-hide { display: none !important; }

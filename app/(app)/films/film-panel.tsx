@@ -59,6 +59,8 @@ export interface PanelFilm {
   dimBreakdown?: DimBreakdown[]
   libraryStatus: { list: string; my_stars: number | null } | null
   recommendedBy?: string[]
+  /** Friends who've watched this film — populated in Network catalog mode */
+  watchers?: { id: string; name: string; stars: number | null }[]
 }
 
 interface Props {
@@ -437,6 +439,25 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
                 </div>
               )}
             </div>
+            {trailerUrl && (
+              <a
+                href={trailerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontFamily: 'var(--mono)', fontSize: 9.5,
+                  textDecoration: 'none', letterSpacing: '0.04em',
+                  padding: '7px 14px', borderRadius: 999,
+                  border: '0.5px solid #c00',
+                  background: '#fff0f0',
+                  color: '#c00',
+                  marginTop: 8,
+                }}
+              >
+                ▶ trailer
+              </a>
+            )}
           </div>
         </div>
 
@@ -641,6 +662,41 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
           </>
         )}
 
+        {/* Your network has seen this */}
+        {film.watchers && film.watchers.length > 0 && (
+          <>
+            <div style={{ borderTop: '0.5px solid var(--paper-edge)', margin: '0 20px' }} />
+            <div style={{ padding: '16px 20px' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 8.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 12 }}>
+                your network
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {film.watchers.map(w => (
+                  <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%',
+                      background: 'var(--paper-edge)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 700,
+                      color: 'var(--ink-3)', flexShrink: 0,
+                    }}>
+                      {w.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span style={{ fontFamily: 'var(--serif-display)', fontSize: 14, fontWeight: 500, color: 'var(--ink)', flex: 1 }}>
+                      {w.name.split(' ')[0]}
+                    </span>
+                    {w.stars != null && (
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--sun)', letterSpacing: '0.02em' }}>
+                        {w.stars}★
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
         {/* Friend recs */}
         {film.recommendedBy && film.recommendedBy.length > 0 && (
           <>
@@ -652,7 +708,7 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
           </>
         )}
 
-        {/* Where to watch + trailer */}
+        {/* Where to watch */}
         <>
           <div style={{ borderTop: '0.5px solid var(--paper-edge)', margin: '0 20px' }} />
           <div style={{ padding: '16px 20px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -665,24 +721,6 @@ export function FilmPanel({ film, onClose, onLibraryChange }: Props) {
               >
                 search on JustWatch →
               </a>
-              {trailerUrl && (
-                <a
-                  href={trailerUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    fontFamily: 'var(--mono)', fontSize: 9.5,
-                    textDecoration: 'none', letterSpacing: '0.04em',
-                    padding: '7px 14px', borderRadius: 999,
-                    border: '0.5px solid #c00',
-                    background: '#fff0f0',
-                    color: '#c00',
-                  }}
-                >
-                  ▶ trailer
-                </a>
-              )}
             </div>
           </div>
         </>

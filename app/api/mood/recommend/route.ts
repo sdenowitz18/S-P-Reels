@@ -1,39 +1,15 @@
 /**
  * POST /api/mood/recommend
  *
- * Mood Room recommendation engine — finds films that score well for ALL
- * members of the room using the Consensus Harmony Score.
+ * Mood Room recommendation engine — all enriched films in the catalog,
+ * scored by Consensus Harmony Score for everyone in the room.
  *
- * Algorithm (per film):
- *   1. Compute each member's individual match score (taste code vs. film dims)
- *   2. roomScore = mean(scores) − 0.5 × stdev(scores)
- *      → low variance (everyone agrees) keeps score near mean
- *      → high variance (split opinion) pulls score down
- *   3. Members without enough logs for a taste code are excluded from scoring
- *      (treated as flexible — they don't pull the score down)
- *   4. If no member has a taste code, fall back to compositeQuality sort
+ * Social proof: if any of the CURRENT USER's direct friends have watched
+ * a film, that is surfaced as seenBy on the result. Friends of friends
+ * are not included.
  *
- * Request body:
- *   memberIds:   string[]   — friend user IDs to add to room (current user always included)
- *   filters:     {
- *     kind?:        'movie' | 'tv'        — omit for both
- *     aiGenre?:     string                — AI genre keyword filter
- *     newReleases?: boolean               — films from last 2 years only
- *   }
- *   offset?:     number     — pagination offset (default 0)
- *   limit?:      number     — results per page (default 5)
- *   exclude?:    string[]   — film IDs already shown (skip them)
- *
- * Returns:
- *   {
- *     films: Array<{
- *       id, title, year, poster_path, director, kind,
- *       roomScore, memberScores: { [userId]: number }
- *     }>
- *     totalScored: number
- *     hasTasteCode: boolean  — whether any member had a taste code
- *     memberIds: string[]    — all member IDs in the room (current user + friends)
- *   }
+ * filters.haventSeen (default true): when true, films the current user
+ * has already watched are excluded from results.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -65,11 +41,12 @@ type FilmRow = {
   ai_brief: { dimensions_v2?: FilmDimensionsV2; genres?: string[] } | null
 }
 
-/**
- * Same display-score stretch used in the catalog:
- *   2x − x²/100  (monotonically increasing, 0→0, 100→100, lifts 70-89 → 91-99)
- * Keeps room scores consistent with what users see in the catalog.
- */
+export type SeenByEntry = {
+  id: string
+  name: string
+  stars: number | null
+}
+
 function displayScore(raw: number): number {
   return Math.min(99, Math.round(2 * raw - (raw * raw) / 100))
 }
@@ -81,7 +58,6 @@ function stdev(values: number[]): number {
   return Math.sqrt(variance)
 }
 
-/** Fetch taste code for a single user using the admin client. */
 async function fetchTasteCode(
   userId: string,
   admin: ReturnType<typeof createAdminClient>,
@@ -112,38 +88,42 @@ async function fetchTasteCode(
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handler(req)
+  } catch (e) {
+    console.error('[mood/recommend] unhandled error', e)
+    return NextResponse.json({ error: 'internal error', films: [] }, { status: 500 })
+  }
+}
+
+async function handler(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const memberIds: string[] = body.memberIds ?? []
-  const filters = body.filters ?? {}
-  const offset: number  = body.offset  ?? 0
-  const limit: number   = body.limit   ?? 5
-  const exclude: string[] = body.exclude ?? []
+  const memberIds: string[]  = body.memberIds ?? []
+  const filters              = body.filters ?? {}
+  const offset: number       = body.offset  ?? 0
+  const limit: number        = body.limit   ?? 5
+  const exclude: string[]    = body.exclude ?? []
+  const haventSeen: boolean  = filters.haventSeen !== false
 
-  // Always include current user; deduplicate
   const allMemberIds = Array.from(new Set([user.id, ...memberIds]))
-
   const admin = createAdminClient()
 
-  // ── Fetch taste codes for all members in parallel ────────────────────────────
+  // ── Taste codes for all room members ────────────────────────────────────────
   const tasteCodeMap = new Map<string, TasteCode | null>()
   await Promise.all(
     allMemberIds.map(async id => {
-      const tc = await fetchTasteCode(id, admin)
-      tasteCodeMap.set(id, tc)
+      tasteCodeMap.set(id, await fetchTasteCode(id, admin))
     })
   )
-
-  // Members that actually contribute to scoring
   const scoringMembers = allMemberIds.filter(id => tasteCodeMap.get(id) != null)
-  const hasTasteCode = scoringMembers.length > 0
+  const hasTasteCode   = scoringMembers.length > 0
 
-  // ── Fetch watched IDs for ALL members (hide already-seen films) ──────────────
-  // Current user via session (respects RLS); friends via admin client.
-  const [myWatchedRows, friendLibRows] = await Promise.all([
+  // ── Room members' library (watched / watchlist / now_playing) ────────────────
+  const [myWatchedRows, friendLibRows, myWatchlistRows] = await Promise.all([
     supabase
       .from('library_entries')
       .select('film_id')
@@ -158,37 +138,92 @@ export async function POST(req: NextRequest) {
           .in('list', ['watched', 'watchlist', 'now_playing'])
           .then(({ data }) => data ?? [])
       : Promise.resolve([]),
+    supabase
+      .from('library_entries')
+      .select('film_id')
+      .eq('user_id', user.id)
+      .eq('list', 'watchlist')
+      .then(({ data }) => data ?? []),
   ])
 
-  // Films watched by anyone → excluded from recommendations
-  const watchedIds = new Set([
-    ...myWatchedRows.map((r: any) => r.film_id),
-    ...(friendLibRows as any[]).filter(r => ['watched', 'now_playing'].includes(r.list)).map((r: any) => r.film_id),
-  ])
+  // Films seen by room friends — always excluded
+  const friendWatchedIds = new Set(
+    (friendLibRows as any[])
+      .filter(r => ['watched', 'now_playing'].includes(r.list))
+      .map((r: any) => r.film_id)
+  )
 
-  // Films on any member's watchlist → still excluded, but we'll attach a flag
-  const watchlistByFilm = new Map<string, string[]>()  // filmId → memberIds who watchlisted it
+  // Current user's watched films — excluded when haventSeen is active
+  const myWatchedIds = new Set(myWatchedRows.map((r: any) => r.film_id))
+
+  // Watchlist ★ badge for room members
+  const watchlistByFilm = new Map<string, string[]>()
   for (const r of friendLibRows as any[]) {
     if (r.list === 'watchlist') {
-      const existing = watchlistByFilm.get(r.film_id) ?? []
-      watchlistByFilm.set(r.film_id, [...existing, r.user_id])
+      const ex = watchlistByFilm.get(r.film_id) ?? []
+      watchlistByFilm.set(r.film_id, [...ex, r.user_id])
     }
   }
-  // Also check current user's watchlist
-  const myWatchlistRows = await supabase
-    .from('library_entries')
-    .select('film_id')
-    .eq('user_id', user.id)
-    .eq('list', 'watchlist')
-    .then(({ data }) => data ?? [])
   for (const r of myWatchlistRows as any[]) {
-    const existing = watchlistByFilm.get(r.film_id) ?? []
-    watchlistByFilm.set(r.film_id, [...existing, user.id])
+    const ex = watchlistByFilm.get(r.film_id) ?? []
+    watchlistByFilm.set(r.film_id, [...ex, user.id])
   }
 
-  const excludeSet = new Set([...watchedIds, ...exclude])
+  const excludeSet = new Set([
+    ...friendWatchedIds,
+    ...(haventSeen ? myWatchedIds : []),
+    ...exclude,
+  ])
 
-  // ── Fetch all enriched films ─────────────────────────────────────────────────
+  // ── Current user's direct friends (for seenBy social proof only) ─────────────
+  const [{ data: sentFriends }, { data: receivedFriends }] = await Promise.all([
+    admin.from('friend_requests')
+      .select('friend:to_user_id(id, name)')
+      .eq('from_user_id', user.id)
+      .eq('status', 'accepted'),
+    admin.from('friend_requests')
+      .select('friend:from_user_id(id, name)')
+      .eq('to_user_id', user.id)
+      .eq('status', 'accepted'),
+  ])
+
+  const myFriends: { id: string; name: string }[] = [
+    ...(sentFriends    ?? []).map((r: any) => r.friend),
+    ...(receivedFriends ?? []).map((r: any) => r.friend),
+  ].filter((f): f is { id: string; name: string } => !!f?.id)
+
+  const friendNameMap = new Map(myFriends.map(f => [f.id, f.name]))
+
+  // Which of my friends have watched each film?
+  const friendFilmMap = new Map<string, SeenByEntry[]>()
+  if (myFriends.length > 0) {
+    const { data: friendWatched } = await admin
+      .from('library_entries')
+      .select('film_id, my_stars, user_id')
+      .in('user_id', myFriends.map(f => f.id))
+      .eq('list', 'watched')
+
+    for (const e of (friendWatched ?? []) as any[]) {
+      const entry: SeenByEntry = {
+        id:    e.user_id,
+        name:  friendNameMap.get(e.user_id) ?? 'Friend',
+        stars: e.my_stars ?? null,
+      }
+      const existing = friendFilmMap.get(e.film_id) ?? []
+      friendFilmMap.set(e.film_id, [...existing, entry])
+    }
+  }
+
+  // ── Film IDs that at least one user has actually watched ─────────────────────
+  // This is the pool: only films someone in the system logged, not TMDB ghosts.
+  const { data: systemWatchedRows } = await admin
+    .from('library_entries')
+    .select('film_id')
+    .eq('list', 'watched')
+
+  const systemWatchedFilmIds = new Set((systemWatchedRows ?? []).map((r: any) => r.film_id as string))
+
+  // ── Fetch enriched films (full catalog) ──────────────────────────────────────
   let q = supabase
     .from('films')
     .select('id, title, year, poster_path, director, kind, tmdb_genres, tmdb_vote_average, tmdb_vote_count, imdb_rating, rt_score, metacritic, ai_brief')
@@ -206,43 +241,39 @@ export async function POST(req: NextRequest) {
   const { data: rawFilms, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Score all films ──────────────────────────────────────────────────────────
+  // ── Score ────────────────────────────────────────────────────────────────────
   const scored = (rawFilms as unknown as FilmRow[])
-    .filter(f => !excludeSet.has(f.id))
+    .filter(f => !excludeSet.has(f.id) && systemWatchedFilmIds.has(f.id))
     .flatMap(f => {
       const dims = f.ai_brief?.dimensions_v2
       if (!dims) return []
 
-      // AI genre filter
       const aiGenres: string[] = (f.ai_brief as any)?.genres ?? []
       if (filters.aiGenre && !aiGenres.some((g: string) =>
         g.toLowerCase().includes((filters.aiGenre as string).toLowerCase())
-      )) {
-        return []
-      }
+      )) return []
 
       const compositeQuality = computeCompositeQuality({
         tmdbVoteAverage: f.tmdb_vote_average,
-        tmdbVoteCount: f.tmdb_vote_count,
-        imdbRating: f.imdb_rating,
-        rtScore: f.rt_score,
-        metacritic: f.metacritic,
+        tmdbVoteCount:   f.tmdb_vote_count,
+        imdbRating:      f.imdb_rating,
+        rtScore:         f.rt_score,
+        metacritic:      f.metacritic,
       })
+
+      const seenBy = friendFilmMap.get(f.id) ?? []
 
       if (hasTasteCode) {
         const memberScores: Record<string, number> = {}
         for (const memberId of scoringMembers) {
-          const tc = tasteCodeMap.get(memberId)!
+          const tc  = tasteCodeMap.get(memberId)!
           const raw = computeMatchScore(tc, dims)
-          const qualityAdjusted = applyQualityMultiplier(raw, compositeQuality)
-          // Apply same display-score stretch as catalog so numbers match
-          memberScores[memberId] = displayScore(qualityAdjusted)
+          memberScores[memberId] = displayScore(applyQualityMultiplier(raw, compositeQuality))
         }
 
-        // Room score: mean of stretched individual scores − 0.5 × stdev
-        const scores = Object.values(memberScores)
-        const mean = scores.reduce((a, b) => a + b, 0) / scores.length
-        const sd   = stdev(scores)
+        const scores    = Object.values(memberScores)
+        const mean      = scores.reduce((a, b) => a + b, 0) / scores.length
+        const sd        = stdev(scores)
         const roomScore = Math.round(Math.max(0, mean - 0.5 * sd))
 
         return [{
@@ -250,26 +281,25 @@ export async function POST(req: NextRequest) {
           poster_path: f.poster_path, director: f.director, kind: f.kind,
           roomScore, memberScores,
           onWatchlist: watchlistByFilm.get(f.id) ?? [],
+          seenBy,
         }]
       } else {
-        // No taste codes — use quality score as room score
         const roomScore = displayScore(Math.round((compositeQuality ?? 0) * 100))
         return [{
           id: f.id, title: f.title, year: f.year,
           poster_path: f.poster_path, director: f.director, kind: f.kind,
           roomScore, memberScores: {},
           onWatchlist: watchlistByFilm.get(f.id) ?? [],
+          seenBy,
         }]
       }
     })
     .sort((a, b) => b.roomScore - a.roomScore)
 
-  const page = scored.slice(offset, offset + limit)
-
   return NextResponse.json({
-    films: page,
+    films:       scored.slice(offset, offset + limit),
     totalScored: scored.length,
     hasTasteCode,
-    memberIds: allMemberIds,
+    memberIds:   allMemberIds,
   })
 }

@@ -61,8 +61,17 @@ _All items below are connected by one thread: making friends feel present throug
 - Recommendation notification copy: *"recommended via Friend Lens"* (not generic) so the recipient knows where to find the feature
 - When a user taps through from that notification, the Lens button pulses/flashes briefly to orient them
 
+#### Network Catalog tab
+- Catalog gains a **Network** tab: films filtered to what your friend network has watched — not the full database
+- Friend filter strip (one chip per friend) lets you narrow to a specific person's watched list
+- Each card shows who's seen it + their rating as a compact attribution badge
+- Sorted by: breadth (how many friends have seen it), then match score as tiebreaker
+- Cold start states: no friends → add friend prompt; friends but no logs → "check back soon"
+- Full spec in `prd-social.md` Feature 7
+
 #### Recommendations inbox — catalog tab
-- Catalog gains a third tab: **All Titles / New Releases / Recommended**
+- Catalog gains a **Recommended** tab alongside Network
+- Tab order: All Titles · New Releases · Network · Recommended
 - Recommended tab shows all films friends have sent you, with who sent it (multiple senders shown if overlapping), and any note they included
 - In the Mood Room: a small "Recommended by friends" filter surfaces relevant recs in that context too
 
@@ -158,6 +167,7 @@ Skills are reusable workflows Claude can execute on command. As the product matu
 
 ## Known technical debt
 
+- **Post-parallel-agent consolidation** — multiple agents built features simultaneously (Social Sprint, Friends Feed, Notifications, etc.); audit for duplicated utilities, shared API patterns, and reusable components that can be deduplicated and centralized before the next phase
 - Missing `ai_brief.dimensions_v2` on most films → limits taste code quality for new users
 - OpenAI credits needed to run `generate-briefs.ts` at scale
 - `supabase db push` needed for migration `0008_taste_recommendations.sql`

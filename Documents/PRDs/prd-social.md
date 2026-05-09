@@ -133,6 +133,72 @@ We already compute μ and σ per user (see `computeRatingStats` in `lib/taste/ma
 
 ---
 
+## Feature 7: Network Catalog (`/films` — Network tab)
+
+### Concept
+The catalog's default mode shows every film in the database — useful, but noisy. The Network tab flips the model: instead of browsing all films, you browse the films your friends have actually watched. Every title in the Network tab has a human attached to it.
+
+This isn't a filter on top of the existing catalog. It's a different inventory. The question it answers is: "what has my network seen?" not "what's in the database?"
+
+This principle extends beyond the catalog tab — the Mood Room uses the same network-filtered pool as its candidate set when running recommendations. See `prd-discovery.md` Feature 2 for the Mood Room spec.
+
+### What to build
+
+**Tab placement**
+- Catalog gains a "Network" tab alongside All Titles / New Releases / Recommended (per Phase D roadmap note)
+- Default tab remains All Titles; Network is a mode you enter intentionally
+- Tab order: All Titles · New Releases · Network · Recommended
+
+**Network tab: default view ("All Friends")**
+- Shows every film watched by at least one friend in your network, deduplicated
+- Sorted by: number of friends who've seen it (desc), then by your match score as tiebreaker
+- Each film card shows a small friend attribution below the title: avatar(s) or name(s) of who's watched it, plus their star rating if they gave one
+- Your match badge still appears (top-right corner) — the Network tab is still taste-aware
+- Films you've already watched are dimmed or labeled (same behavior as current catalog)
+
+**Friend filter strip**
+- Horizontal chip row directly below the tab bar: **All Friends** (selected by default) + one chip per friend
+- Selecting a friend filters to only their watched films — their rating replaces the attribution badge on each card
+- Selecting multiple friends shows the intersection or union (start with union — intersection gets too sparse)
+- Chip count shows how many films that friend has logged, e.g. "Maya (34)"
+
+**Card behavior**
+- Clicking any film opens the standard film side panel
+- Panel already shows friend ratings if enriched — no new panel work needed
+
+### Design decisions
+
+**Why union, not intersection, for multi-friend filter**
+Intersection (films all selected friends have seen) gets too small too fast — 3 friends and you might have 5 films. Union keeps the catalog rich while still being bounded.
+
+**Attribution on the card, not in the panel**
+The friend's name/avatar on the card is what makes this feel different from the regular catalog. It's a passive social signal — every film has provenance. Keep it compact (max 3 avatars, then "+N").
+
+**Sort priority: breadth first, then match**
+A film 4 friends have seen is more socially validated than one only 1 friend has seen, so social depth ranks above match score. But within the same "seen by N friends" tier, match score breaks ties so the results still feel personally relevant.
+
+**"Your network" framing, not "friends"**
+Use "Your Network" in UI copy rather than "Friends" — it's slightly warmer and scales better when the feature expands (e.g., friends-of-friends someday).
+
+### Cold start handling
+
+| State | What to show |
+|---|---|
+| No friends yet | Empty state: "Add friends to see what your network is watching" + Add Friend button |
+| Friends exist, none have logged films | "Your friends haven't logged any films yet — check back soon" + links to their profiles |
+| 1–5 network films | Show what exists + "Your catalog grows as your network does" + Add Friend prompt |
+| Normal | Full grid |
+
+### Open requirements
+- [ ] Network tab — base implementation (API + UI)
+- [ ] Friend filter chips with film count
+- [ ] Attribution badges on cards (who's seen it + their rating)
+- [ ] Cold start empty states
+- [ ] Union vs. intersection toggle for multi-friend selection (stretch)
+- [ ] Sort toggle: "Most watched in network" vs. "Best match for you" (stretch)
+
+---
+
 ## Technical reference
 
 - `app/(app)/friends/page.tsx` — friends list + invite
