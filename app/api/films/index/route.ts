@@ -71,7 +71,8 @@ export async function GET(req: NextRequest) {
     tasteCode = computeTasteCode(tasteCodeFilms)
   }
 
-  const watchedIds = new Set(lib.filter(e => e.list === 'watched').map(e => e.film_id))
+  const watchedIds  = new Set(lib.filter(e => e.list === 'watched').map(e => e.film_id))
+  const dismissedIds = new Set(lib.filter(e => e.list === 'dismissed').map(e => e.film_id))
   const libraryMap = new Map(lib.map(e => [e.film_id, { list: e.list, my_stars: e.my_stars }]))
 
   // ── Film fetch ───────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest) {
 
   // ── Score + filter ───────────────────────────────────────────────────────────
   const index = (rawFilms as unknown as IndexRow[])
-    .filter(f => !watchedIds.has(f.id))
+    .filter(f => !watchedIds.has(f.id) && !dismissedIds.has(f.id))
     .map(f => {
       const dimsV2 = f.ai_brief?.dimensions_v2 ?? null
       const tasteScore = tasteCode && dimsV2

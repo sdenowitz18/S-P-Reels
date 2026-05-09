@@ -21,6 +21,7 @@ How taste becomes relational. Friends, compatibility analysis, the blend page (s
 ### Open requirements
 - [ ] Remove friend action
 - [ ] Friend activity feed (lightweight — what your friends are watching, not a full social feed)
+- [ ] Match score on unseen activity items: when a friend's activity item is a film you haven't watched, show your projected match score alongside their rating — turns the feed into a passive discovery surface
 
 ---
 
@@ -51,6 +52,7 @@ We already compute μ and σ per user (see `computeRatingStats` in `lib/taste/ma
 - [ ] Shared watchlist (films you've both saved to watch)
 - [ ] "You should watch this" — lightweight nudge from friend's watchlist
 - [ ] Implement deviation-weighted crossover thresholds (see design decision above) — requires fetching ratingStats for both users and applying per-user thresholds at filter time
+- [ ] Friend's full watched list on their profile: all films they've watched, sortable by your projected match score — lets you browse their taste and surface unwatched films that align with yours
 
 ---
 

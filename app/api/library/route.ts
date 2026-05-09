@@ -43,6 +43,8 @@ export async function POST(request: NextRequest) {
     matchScoreAtLog, predictedStars, deltaStars, deltaZ,
     userMuAtLog, userSigmaAtLog,
     tasteCodeBefore, tasteCodeAfter,
+    // Dismiss
+    dismissReason,
   } = body
 
   if (!filmId || !list) return NextResponse.json({ error: 'filmId and list required' }, { status: 400 })
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest) {
     user_sigma_at_log: userSigmaAtLog ?? null,
     taste_code_before: tasteCodeBefore ?? null,
     taste_code_after: tasteCodeAfter ?? null,
+    dismiss_reason: list === 'dismissed' ? (dismissReason ?? why ?? null) : null,
   }
 
   const { data, error } = await supabase

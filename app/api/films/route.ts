@@ -169,6 +169,9 @@ export async function GET(req: NextRequest) {
     ? new Set(lib.filter(e => e.list === 'watched').map(e => e.film_id))
     : null
 
+  // Always exclude dismissed films
+  const dismissedIds = new Set(lib.filter(e => e.list === 'dismissed').map(e => e.film_id))
+
   const baseSelect = 'id, title, year, poster_path, director, tmdb_genres, synopsis, kind, tmdb_id, tmdb_vote_average, tmdb_vote_count, imdb_rating, rt_score, metacritic, ai_brief'
 
   let filmData: FilmRow[] = []
@@ -197,6 +200,8 @@ export async function GET(req: NextRequest) {
 
     // JS filters: genre (TMDB OR ai_brief keywords) + mediaType + hideWatched
     const allFilms: FilmRow[] = (allFilmsRaw as FilmRow[]).filter(f => {
+      // Exclude dismissed films
+      if (dismissedIds.has(f.id)) return false
       // Exclude watched films
       if (watchedIds && watchedIds.has(f.id)) return false
       // Media type filter
@@ -294,10 +299,12 @@ export async function GET(req: NextRequest) {
   const { data: filmsRaw, error } = await filmQuery
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Apply hideWatched filter in JS (watched IDs already computed above)
-  const films = watchedIds
-    ? (filmsRaw as FilmRow[]).filter(f => !watchedIds.has(f.id))
-    : (filmsRaw as FilmRow[])
+  // Apply hideWatched + dismissed filter in JS
+  const films = (filmsRaw as FilmRow[]).filter(f => {
+    if (dismissedIds.has(f.id)) return false
+    if (watchedIds && watchedIds.has(f.id)) return false
+    return true
+  })
 
   const result = films.map(f => {
     const dimsV2    = f.ai_brief?.dimensions_v2 ?? null

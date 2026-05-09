@@ -34,6 +34,7 @@ Discovery covers how users find what to watch: the scored catalog, the Mood Room
 - [ ] Genre filter: persist selected genre across reload (URL param)
 - [ ] Poster lazy loading / skeleton states
 - [ ] Panel enrichment latency: ~500ms for index films — show a loading shimmer on the dim tiles while fetching
+- [ ] Friend ratings in catalog: on a film tile or panel, show which friends have rated it and what they gave it (avatars + star rating) — surfaces social signal during solo browsing without replacing the personal match score
 
 ---
 

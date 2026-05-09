@@ -6,6 +6,15 @@ import { FilmPanel, type PanelFilm } from './film-panel'
 import { GENRE_GROUPS } from '@/lib/genre-groups'
 import { LetterLoader } from '@/components/letter-loader'
 
+const NOT_FOR_ME_REASONS = [
+  'Too old',
+  'Foreign language',
+  'Too long',
+  'Not my genre',
+  'Just not interested',
+  'Other',
+]
+
 interface CatalogFilm extends PanelFilm {
   kind: 'movie' | 'tv'
 }
@@ -77,11 +86,107 @@ function RecDot() {
   )
 }
 
-function FilmCard({ film, onClick, large = false }: {
+const overlayActionStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.12)',
+  border: '0.5px solid rgba(255,255,255,0.22)',
+  borderRadius: 6,
+  color: '#fff',
+  cursor: 'pointer',
+  fontFamily: 'var(--mono)',
+  fontSize: 9,
+  letterSpacing: '0.07em',
+  padding: '6px 10px',
+  transition: 'background 100ms',
+  width: '100%',
+  textAlign: 'center',
+}
+
+const overlayReasonStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.08)',
+  border: '0.5px solid rgba(255,255,255,0.15)',
+  borderRadius: 4,
+  color: 'rgba(255,255,255,0.85)',
+  cursor: 'pointer',
+  fontFamily: 'var(--mono)',
+  fontSize: 8,
+  letterSpacing: '0.05em',
+  padding: '4px 8px',
+  transition: 'background 100ms',
+  width: '100%',
+  textAlign: 'center',
+}
+
+function FilmCard({ film, onClick, large = false, onQuickAction }: {
   film: CatalogFilm
   onClick: () => void
   large?: boolean
+  onQuickAction?: (action: 'watched' | 'watchlist' | 'dismissed', filmId: string, extra?: { stars?: number; reason?: string }) => void
 }) {
+  const [hovered, setHovered] = useState(false)
+  const [overlayMode, setOverlayMode] = useState<'idle' | 'stars' | 'dismiss'>('idle')
+  const [saving, setSaving] = useState(false)
+
+  const handleMouseLeave = () => {
+    setHovered(false)
+    setOverlayMode('idle')
+  }
+
+  const handleWatchlist = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (saving) return
+    setSaving(true)
+    try {
+      await fetch('/api/library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filmId: film.id, list: 'watchlist' }),
+      })
+      onQuickAction?.('watchlist', film.id)
+      setHovered(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleStarPick = async (e: React.MouseEvent, stars: number) => {
+    e.stopPropagation()
+    if (saving) return
+    setSaving(true)
+    try {
+      await fetch('/api/library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filmId: film.id, list: 'watched', myStars: stars }),
+      })
+      onQuickAction?.('watched', film.id, { stars })
+      setHovered(false)
+      setOverlayMode('idle')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDismiss = async (e: React.MouseEvent, reason: string) => {
+    e.stopPropagation()
+    if (saving) return
+    setSaving(true)
+    try {
+      await fetch('/api/library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filmId: film.id, list: 'dismissed', why: reason }),
+      })
+      onQuickAction?.('dismissed', film.id, { reason })
+      setHovered(false)
+      setOverlayMode('idle')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const alreadyWatched = film.libraryStatus?.list === 'watched'
+  const alreadyOnList  = film.libraryStatus?.list === 'watchlist'
+
   return (
     <button
       onClick={onClick}
@@ -89,22 +194,17 @@ function FilmCard({ film, onClick, large = false }: {
     >
       {/* Poster */}
       <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={handleMouseLeave}
         style={{
           width: '100%', aspectRatio: '2/3', borderRadius: large ? 8 : 6, overflow: 'hidden',
           background: 'var(--paper-2)', border: '0.5px solid var(--paper-edge)',
           position: 'relative', marginBottom: large ? 10 : 7,
-          boxShadow: large ? '0 4px 16px rgba(0,0,0,0.12)' : '0 2px 8px rgba(0,0,0,0.08)',
+          boxShadow: hovered
+            ? (large ? '0 10px 28px rgba(0,0,0,0.18)' : '0 6px 16px rgba(0,0,0,0.14)')
+            : (large ? '0 4px 16px rgba(0,0,0,0.12)' : '0 2px 8px rgba(0,0,0,0.08)'),
+          transform: hovered ? 'translateY(-2px)' : '',
           transition: 'box-shadow 150ms, transform 150ms',
-        }}
-        onMouseEnter={e => {
-          const el = e.currentTarget as HTMLElement
-          el.style.transform = 'translateY(-2px)'
-          el.style.boxShadow = large ? '0 10px 28px rgba(0,0,0,0.18)' : '0 6px 16px rgba(0,0,0,0.14)'
-        }}
-        onMouseLeave={e => {
-          const el = e.currentTarget as HTMLElement
-          el.style.transform = ''
-          el.style.boxShadow = large ? '0 4px 16px rgba(0,0,0,0.12)' : '0 2px 8px rgba(0,0,0,0.08)'
         }}
       >
         {film.poster_path
@@ -116,7 +216,7 @@ function FilmCard({ film, onClick, large = false }: {
           )
         }
         <MatchBadge score={film.matchScore} />
-        <LibraryBadge status={film.libraryStatus} />
+        {!hovered && <LibraryBadge status={film.libraryStatus} />}
         {film.recommendedBy && film.recommendedBy.length > 0 && <RecDot />}
         {film.kind === 'tv' && (
           <div style={{
@@ -127,6 +227,97 @@ function FilmCard({ film, onClick, large = false }: {
             color: '#ccc', letterSpacing: '0.06em', lineHeight: 1,
           }}>
             TV
+          </div>
+        )}
+
+        {/* ── Hover overlay ── */}
+        {hovered && (
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', inset: 0,
+              background: 'rgba(0,0,0,0.76)',
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'stretch', justifyContent: 'center',
+              gap: overlayMode === 'dismiss' ? 4 : 8,
+              padding: large ? '14px 14px' : '10px 10px',
+            }}
+          >
+            {/* ─ Default: 3 action buttons ─ */}
+            {overlayMode === 'idle' && (
+              <>
+                <button
+                  onClick={e => { e.stopPropagation(); setOverlayMode('stars') }}
+                  style={overlayActionStyle}
+                >
+                  {alreadyWatched ? 're-rate ★' : 'seen ★'}
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setOverlayMode('dismiss') }}
+                  style={{ ...overlayActionStyle, color: 'rgba(255,255,255,0.55)' }}
+                >
+                  not for me
+                </button>
+                <button
+                  onClick={handleWatchlist}
+                  style={{ ...overlayActionStyle, color: alreadyOnList ? '#f0c96a' : '#fff' }}
+                >
+                  {alreadyOnList ? '✓ on list' : '+ list'}
+                </button>
+              </>
+            )}
+
+            {/* ─ Star picker ─ */}
+            {overlayMode === 'stars' && (
+              <>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'rgba(255,255,255,0.5)', textAlign: 'center', letterSpacing: '0.06em', marginBottom: 2 }}>
+                  how many stars?
+                </div>
+                <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                  {[1, 2, 3, 4, 5].map(s => (
+                    <button
+                      key={s}
+                      onClick={e => handleStarPick(e, s)}
+                      style={{
+                        background: 'rgba(255,255,255,0.10)',
+                        border: '0.5px solid rgba(255,255,255,0.20)',
+                        borderRadius: 4, color: '#f0c96a',
+                        cursor: 'pointer',
+                        fontFamily: 'var(--mono)', fontSize: large ? 11 : 9,
+                        fontWeight: 700, padding: large ? '6px 8px' : '4px 6px',
+                        flex: 1, transition: 'background 80ms',
+                      }}
+                    >
+                      {s}★
+                    </button>
+                  ))}
+                </div>
+                <button onClick={e => { e.stopPropagation(); setOverlayMode('idle') }} style={{ ...overlayActionStyle, fontSize: 8, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                  ← back
+                </button>
+              </>
+            )}
+
+            {/* ─ Not for me: reason list ─ */}
+            {overlayMode === 'dismiss' && (
+              <>
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 8, color: 'rgba(255,255,255,0.45)', textAlign: 'center', letterSpacing: '0.06em', marginBottom: 2 }}>
+                  why not?
+                </div>
+                {NOT_FOR_ME_REASONS.map(reason => (
+                  <button
+                    key={reason}
+                    onClick={e => handleDismiss(e, reason)}
+                    style={overlayReasonStyle}
+                  >
+                    {reason.toLowerCase()}
+                  </button>
+                ))}
+                <button onClick={e => { e.stopPropagation(); setOverlayMode('idle') }} style={{ ...overlayReasonStyle, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+                  ← back
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -182,6 +373,7 @@ export default function FilmCatalogPage() {
   const [activeKeyword, setActiveKeyword] = useState<string | null>(null)
   const [hasMatchScores, setHasMatchScores] = useState(false)
   const [selectedFilm, setSelectedFilm]     = useState<CatalogFilm | null>(null)
+  const [dismissedIds, setDismissedIds]     = useState<Set<string>>(new Set())
   const debounceRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pageFilmMapRef = useRef<Map<string, CatalogFilm>>(new Map())
 
@@ -297,8 +489,13 @@ export default function FilmCatalogPage() {
   // Reset visible count when filters change
   useEffect(() => { setVisibleCount(PAGE_SIZE) }, [mediaType, activeGroup, activeKeyword])
 
-  const visibleFilms = filteredFilms.slice(0, visibleCount)
-  const hasMore      = visibleCount < filteredFilms.length
+  const undismissedFilms = useMemo(
+    () => dismissedIds.size > 0 ? filteredFilms.filter(f => !dismissedIds.has(f.id)) : filteredFilms,
+    [filteredFilms, dismissedIds]
+  )
+
+  const visibleFilms = undismissedFilms.slice(0, visibleCount)
+  const hasMore      = visibleCount < undismissedFilms.length
 
   const loadMore = () => {
     setLoadingMore(true)
@@ -311,6 +508,21 @@ export default function FilmCatalogPage() {
     setIndexFilms(prev => prev ? prev.map(f => f.id === filmId ? { ...f, libraryStatus: status } : f) : prev)
     if (selectedFilm?.id === filmId) setSelectedFilm(prev => prev ? { ...prev, libraryStatus: status } : prev)
   }
+
+  const handleQuickAction = useCallback((
+    action: 'watched' | 'watchlist' | 'dismissed',
+    filmId: string,
+    extra?: { stars?: number; reason?: string }
+  ) => {
+    if (action === 'dismissed') {
+      setDismissedIds(prev => new Set([...prev, filmId]))
+    } else {
+      const newStatus: CatalogFilm['libraryStatus'] = action === 'watched'
+        ? { list: 'watched', my_stars: extra?.stars ?? null }
+        : { list: 'watchlist', my_stars: null }
+      handleLibraryChange(filmId, newStatus)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── On-demand panel enrichment ──────────────────────────────────────────────
   // Films from the lean index don't carry dimBreakdown or synopsis.
@@ -352,7 +564,7 @@ export default function FilmCatalogPage() {
             </h1>
             {!loading && (
               <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--ink-4)', paddingBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                {filteredFilms.length.toLocaleString()} titles
+                {undismissedFilms.length.toLocaleString()} titles
                 {indexLoading && !debouncedQuery && (
                   <span style={{ fontSize: 8, letterSpacing: '0.06em', opacity: 0.5, fontStyle: 'italic' }}>indexing…</span>
                 )}
@@ -501,7 +713,7 @@ export default function FilmCatalogPage() {
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
             <LetterLoader label="loading" />
           </div>
-        ) : filteredFilms.length === 0 ? (
+        ) : undismissedFilms.length === 0 ? (
           <p style={{ fontStyle: 'italic', fontSize: 14, color: 'var(--ink-4)', fontFamily: 'var(--serif-italic)' }}>
             {activeGroup || activeKeyword ? 'no titles match this genre filter.' : mode === 'new' ? 'no recent releases found.' : 'no titles found.'}
           </p>
@@ -519,7 +731,7 @@ export default function FilmCatalogPage() {
                   gap: 18, marginBottom: 32,
                 }}>
                   {visibleFilms.slice(0, 4).map(film => (
-                    <FilmCard key={film.id} film={film} onClick={() => setSelectedFilm(film)} large />
+                    <FilmCard key={film.id} film={film} onClick={() => setSelectedFilm(film)} large onQuickAction={handleQuickAction} />
                   ))}
                 </div>
                 {visibleFilms.length > 4 && (
@@ -537,7 +749,7 @@ export default function FilmCatalogPage() {
               gap: 16,
             }}>
               {(hasMatchScores ? visibleFilms.slice(4) : visibleFilms).map(film => (
-                <FilmCard key={film.id} film={film} onClick={() => setSelectedFilm(film)} />
+                <FilmCard key={film.id} film={film} onClick={() => setSelectedFilm(film)} onQuickAction={handleQuickAction} />
               ))}
             </div>
 
@@ -553,7 +765,7 @@ export default function FilmCatalogPage() {
                     opacity: loadingMore ? 0.5 : 1, transition: 'all 120ms',
                   }}
                 >
-                  {loadingMore ? 'loading…' : `show more (${filteredFilms.length - visibleCount} remaining)`}
+                  {loadingMore ? 'loading…' : `show more (${undismissedFilms.length - visibleCount} remaining)`}
                 </button>
               </div>
             )}
