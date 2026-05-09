@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { AppShell } from '@/components/app-shell'
 import { FilmPanel, type PanelFilm } from './film-panel'
 import { GENRE_GROUPS } from '@/lib/genre-groups'
+import { posterUrl } from '@/lib/types'
 import { LetterLoader } from '@/components/letter-loader'
 
 const NOT_FOR_ME_REASONS = [
@@ -194,9 +195,9 @@ function FilmCard({ film, onClick, large = false, onQuickAction, friendRating, f
   const alreadyOnList  = film.libraryStatus?.list === 'watchlist'
 
   return (
-    <button
+    <div
       onClick={onClick}
-      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block' }}
+      style={{ cursor: 'pointer', textAlign: 'left', width: '100%', display: 'block' }}
     >
       {/* Poster */}
       <div
@@ -370,7 +371,7 @@ function FilmCard({ film, onClick, large = false, onQuickAction, friendRating, f
           </span>
         )}
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -579,7 +580,7 @@ export default function FilmCatalogPage() {
         filmMap.get(rec.film_id)!.senders.push({ name: rec.from_user.name, note: rec.note })
       }
       setRecFilmsRaw(Array.from(filmMap.values()).map(({ film, senders }) => ({
-        id: film.id, title: film.title, year: film.year, poster_path: film.poster_path,
+        id: film.id, title: film.title, year: film.year, poster_path: posterUrl(film.poster_path, 'w342'),
         director: film.director, kind: 'movie' as const, matchScore: null,
         libraryStatus: null, recommendedBy: senders.map(s => s.name),
         genres: [], aiGenres: [], dimBreakdown: [], synopsis: null,
